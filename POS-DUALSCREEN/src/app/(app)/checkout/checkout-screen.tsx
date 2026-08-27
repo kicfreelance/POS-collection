@@ -17,6 +17,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import {
   Popover,
   PopoverContent,
@@ -301,11 +302,11 @@ export function CheckoutScreen({
   return (
     <div className="flex flex-1">
       {/* Cart panel */}
-      <div className="flex w-[420px] shrink-0 flex-col border-r border-border/60 bg-card/40">
-        <div className="flex items-center justify-between border-b border-border/60 px-5 py-4">
+      <div className="flex w-[400px] shrink-0 flex-col border-r border-border/70 bg-card">
+        <div className="flex items-center justify-between border-b border-border/70 px-5 py-4">
           <div className="flex items-center gap-2">
-            <ShoppingCart className="size-5 text-muted-foreground" />
-            <h2 className="font-semibold">Current Sale</h2>
+            <ShoppingCart className="size-5 text-primary" />
+            <h2 className="text-lg font-bold">Current Sale</h2>
           </div>
           {cart.length > 0 && (
             <Button variant="ghost" size="sm" onClick={clearCart}>
@@ -373,7 +374,7 @@ export function CheckoutScreen({
                 return (
                   <div
                     key={line.key}
-                    className="rounded-lg border border-border/60 bg-card p-3 shadow-sm"
+                    className="rounded-2xl border border-border/70 bg-card p-3"
                   >
                     <div className="mb-1 flex items-start justify-between gap-2">
                       <p className="text-sm font-medium">{line.name}</p>
@@ -444,7 +445,7 @@ export function CheckoutScreen({
           )}
         </div>
 
-        <div className="border-t border-border/60 px-5 py-4">
+        <div className="border-t border-border/70 px-5 py-4">
           {canApplyDiscount && cart.length > 0 && (
             <div className="mb-3 flex items-center gap-2">
               <ManualDiscountDialog
@@ -476,49 +477,51 @@ export function CheckoutScreen({
             </div>
           )}
 
-          <div className="grid gap-1 text-sm text-muted-foreground">
-            <div className="flex justify-between">
-              <span>Subtotal</span>
-              <span>{subtotal.toFixed(2)}</span>
+          <div className="rounded-2xl bg-muted p-4">
+            <div className="grid gap-1.5 text-sm text-muted-foreground">
+              <div className="flex justify-between">
+                <span>Subtotal</span>
+                <span className="font-medium text-foreground">{subtotal.toFixed(2)}</span>
+              </div>
+              {productDiscountTotal > 0 && (
+                <div className="flex justify-between text-emerald-600">
+                  <span>Product discounts</span>
+                  <span>-{productDiscountTotal.toFixed(2)}</span>
+                </div>
+              )}
+              {promotionDiscountTotal > 0 && (
+                <div className="flex justify-between text-primary">
+                  <span>Promotions</span>
+                  <span>-{promotionDiscountTotal.toFixed(2)}</span>
+                </div>
+              )}
+              {manualDiscountAmount > 0 && (
+                <div className="flex justify-between text-amber-600">
+                  <span>Manual discount</span>
+                  <span>-{manualDiscountAmount.toFixed(2)}</span>
+                </div>
+              )}
+              {couponDiscountAmount > 0 && (
+                <div className="flex justify-between text-amber-600">
+                  <span>Coupon</span>
+                  <span>-{couponDiscountAmount.toFixed(2)}</span>
+                </div>
+              )}
+              <div className="flex justify-between">
+                <span>Tax</span>
+                <span className="font-medium text-foreground">{taxTotal.toFixed(2)}</span>
+              </div>
             </div>
-            {productDiscountTotal > 0 && (
-              <div className="flex justify-between text-emerald-500">
-                <span>Product discounts</span>
-                <span>-{productDiscountTotal.toFixed(2)}</span>
-              </div>
-            )}
-            {promotionDiscountTotal > 0 && (
-              <div className="flex justify-between text-primary">
-                <span>Promotions</span>
-                <span>-{promotionDiscountTotal.toFixed(2)}</span>
-              </div>
-            )}
-            {manualDiscountAmount > 0 && (
-              <div className="flex justify-between text-amber-500">
-                <span>Manual discount</span>
-                <span>-{manualDiscountAmount.toFixed(2)}</span>
-              </div>
-            )}
-            {couponDiscountAmount > 0 && (
-              <div className="flex justify-between text-amber-500">
-                <span>Coupon</span>
-                <span>-{couponDiscountAmount.toFixed(2)}</span>
-              </div>
-            )}
-            <div className="flex justify-between">
-              <span>Tax</span>
-              <span>{taxTotal.toFixed(2)}</span>
+            <div className="mt-3 flex items-baseline justify-between border-t border-border/70 pt-3">
+              <span className="text-base font-bold">Total</span>
+              <span className="text-2xl font-bold">
+                {currencySymbol}
+                {total.toFixed(2)}
+              </span>
             </div>
-          </div>
-          <div className="my-3 flex items-baseline justify-between">
-            <span className="text-base font-semibold">Total</span>
-            <span className="text-2xl font-bold">
-              {currencySymbol}
-              {total.toFixed(2)}
-            </span>
           </div>
           <Button
-            className="h-12 w-full text-base"
+            className="mt-4 h-14 w-full text-base"
             disabled={cart.length === 0}
             onClick={() => setPayOpen(true)}
           >
@@ -529,21 +532,27 @@ export function CheckoutScreen({
 
       {/* Product panel */}
       <div className="flex flex-1 flex-col">
-        <div className="flex items-center gap-3 border-b border-border/60 px-6 py-4">
+        <div className="flex items-center gap-3 px-6 pt-6 pb-2">
           <div className="relative flex-1">
-            <Search className="pointer-events-none absolute top-1/2 left-3 size-5 -translate-y-1/2 text-muted-foreground" />
+            <Search className="pointer-events-none absolute top-1/2 left-4 size-5 -translate-y-1/2 text-muted-foreground" />
             <Input
               ref={searchInputRef}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={handleSearchKeyDown}
               placeholder="Scan barcode or search products..."
-              className="h-11 pl-9 text-base"
+              className="h-12 rounded-full pl-11 text-base"
               autoFocus
             />
           </div>
           <Popover>
-            <PopoverTrigger render={<Button variant="outline" size="icon"><Keyboard /></Button>} />
+            <PopoverTrigger
+              render={
+                <Button variant="outline" size="icon" className="size-12">
+                  <Keyboard />
+                </Button>
+              }
+            />
             <PopoverContent align="end" className="w-64 text-sm">
               <p className="mb-2 font-medium">Keyboard shortcuts</p>
               <ul className="grid gap-1 text-muted-foreground">
@@ -556,40 +565,47 @@ export function CheckoutScreen({
           <QuickLinksMenu links={buildQuickLinks(quickLinks)} />
         </div>
 
-        <div className="flex flex-wrap gap-2 border-b border-border/60 px-6 py-3">
-          <Button
-            variant={categoryId === null ? "default" : "outline"}
-            size="sm"
-            onClick={() => setCategoryId(null)}
-          >
-            All
-          </Button>
-          {categories.map((category) => (
-            <Button
-              key={category.id}
-              variant={categoryId === category.id ? "default" : "outline"}
-              size="sm"
-              onClick={() => setCategoryId(category.id)}
-            >
-              {category.name}
-            </Button>
-          ))}
+        <div className="flex flex-wrap gap-2 px-6 py-4">
+          {[{ id: null as string | null, name: "All" }, ...categories].map((category) => {
+            const active = categoryId === category.id;
+            return (
+              <button
+                key={category.id ?? "__all__"}
+                type="button"
+                onClick={() => setCategoryId(category.id)}
+                className={cn(
+                  "h-9 rounded-full px-5 text-sm font-semibold transition-colors",
+                  active
+                    ? "bg-foreground text-background"
+                    : "bg-card text-foreground/70 shadow-[var(--shadow-card)] hover:text-foreground",
+                )}
+              >
+                {category.name}
+              </button>
+            );
+          })}
         </div>
 
-        <div className="grid flex-1 auto-rows-max grid-cols-2 gap-3 overflow-y-auto p-6 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+        <div className="grid flex-1 auto-rows-max grid-cols-2 gap-4 overflow-y-auto px-6 pb-6 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
           {filteredProducts.map((product) => (
             <button
               key={product.id}
               type="button"
               onClick={() => addProduct(product)}
-              className="flex flex-col items-start gap-1 rounded-lg border border-border/60 bg-card p-3 text-left shadow-sm transition-transform hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md active:translate-y-0"
+              className="group/tile flex flex-col rounded-2xl bg-card p-3 text-left shadow-[var(--shadow-card)] outline-none transition-transform hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-ring active:translate-y-0"
             >
-              <span className="line-clamp-2 text-sm font-medium">{product.name}</span>
+              <div className="mb-3 aspect-[4/3] w-full rounded-xl bg-muted" />
+              <span className="line-clamp-2 text-sm font-semibold leading-snug">{product.name}</span>
               <span className="text-xs text-muted-foreground">{product.sku}</span>
-              <span className="mt-1 text-sm font-semibold text-primary">
-                {currencySymbol}
-                {product.sellingPrice.toFixed(2)} / {product.baseUnitName}
-              </span>
+              <div className="mt-1 flex items-center justify-between gap-2">
+                <span className="text-sm font-bold">
+                  {currencySymbol}
+                  {product.sellingPrice.toFixed(2)}
+                </span>
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-foreground text-background transition-transform group-hover/tile:scale-105">
+                  <Plus className="size-4" />
+                </span>
+              </div>
             </button>
           ))}
           {filteredProducts.length === 0 && (

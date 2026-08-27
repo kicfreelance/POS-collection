@@ -30,10 +30,12 @@ export function UserMenu({
   fullName,
   roleName,
   hasOpenShift,
+  compact = false,
 }: {
   fullName: string;
   roleName: string;
   hasOpenShift: boolean;
+  compact?: boolean;
 }) {
   const router = useRouter();
   const [endShiftOpen, setEndShiftOpen] = useState(false);
@@ -49,14 +51,20 @@ export function UserMenu({
       <DropdownMenu>
         <DropdownMenuTrigger
           render={
-            <Button variant="ghost" className="h-9 gap-2 px-2">
-              <Avatar className="size-6">
-                <AvatarFallback className="text-[0.65rem]">
-                  {initials(fullName)}
-                </AvatarFallback>
-              </Avatar>
-              <span className="hidden text-sm sm:inline">{fullName}</span>
-            </Button>
+            compact ? (
+              <Button variant="ghost" size="icon" className="size-12 rounded-2xl" aria-label="Account">
+                <Avatar className="size-8">
+                  <AvatarFallback className="text-xs">{initials(fullName)}</AvatarFallback>
+                </Avatar>
+              </Button>
+            ) : (
+              <Button variant="ghost" className="h-9 gap-2 px-2">
+                <Avatar className="size-6">
+                  <AvatarFallback className="text-[0.65rem]">{initials(fullName)}</AvatarFallback>
+                </Avatar>
+                <span className="hidden text-sm sm:inline">{fullName}</span>
+              </Button>
+            )
           }
         />
         <DropdownMenuContent align="end" className="w-48">

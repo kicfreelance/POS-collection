@@ -5,7 +5,7 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-inter), "Inter Fallback", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, monospace;
   --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
@@ -37,49 +37,55 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
+  --shadow-card: var(--shadow-card);
+  --radius-sm: calc(var(--radius) * 0.55);
+  --radius-md: calc(var(--radius) * 0.75);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-xl: calc(var(--radius) * 1.35);
+  --radius-2xl: calc(var(--radius) * 1.7);
   --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+  --radius-4xl: calc(var(--radius) * 2.8);
 }
 
-/* Single neutral light theme (no dark mode) with a vibrant indigo accent. */
+/*
+ * Light "counter POS" theme — a soft neutral-gray canvas with floating white
+ * cards, a vibrant violet primary, near-black secondary actions, generous
+ * rounding and soft shadows. There is no dark mode.
+ */
 :root {
-  --background: oklch(0.985 0.003 255); /* soft off-white, faint cool cast */
-  --foreground: oklch(0.21 0.01 260); /* slate near-black */
+  --background: oklch(0.945 0 0); /* light neutral gray canvas */
+  --foreground: oklch(0.205 0 0); /* near-black ink */
   --card: oklch(1 0 0); /* pure white surfaces */
-  --card-foreground: oklch(0.21 0.01 260);
+  --card-foreground: oklch(0.205 0 0);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.21 0.01 260);
-  --primary: oklch(0.56 0.235 264); /* vibrant indigo-blue */
-  --primary-foreground: oklch(0.99 0.01 260);
-  --secondary: oklch(0.965 0.006 258);
-  --secondary-foreground: oklch(0.3 0.02 262);
-  --muted: oklch(0.965 0.005 258);
-  --muted-foreground: oklch(0.52 0.02 260);
-  --accent: oklch(0.945 0.045 264); /* clear light-blue tint for hover / active */
-  --accent-foreground: oklch(0.42 0.17 264);
+  --popover-foreground: oklch(0.205 0 0);
+  --primary: oklch(0.52 0.25 291); /* vibrant violet */
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.968 0 0); /* faint gray fill */
+  --secondary-foreground: oklch(0.26 0 0);
+  --muted: oklch(0.968 0 0);
+  --muted-foreground: oklch(0.53 0.01 275);
+  --accent: oklch(0.94 0.045 291); /* light lavender for hover / active */
+  --accent-foreground: oklch(0.44 0.19 291);
   --destructive: oklch(0.585 0.235 27.3);
-  --border: oklch(0.915 0.006 258); /* subtle hairline */
-  --input: oklch(0.915 0.006 258);
-  --ring: oklch(0.56 0.235 264 / 0.45);
-  --chart-1: oklch(0.6 0.23 264); /* blue */
+  --border: oklch(0.915 0 0); /* very light hairline */
+  --input: oklch(0.912 0 0);
+  --ring: oklch(0.52 0.25 291 / 0.4);
+  --chart-1: oklch(0.55 0.25 291); /* violet */
   --chart-2: oklch(0.68 0.18 155); /* green */
   --chart-3: oklch(0.76 0.17 65); /* amber */
-  --chart-4: oklch(0.6 0.24 300); /* violet */
+  --chart-4: oklch(0.62 0.2 240); /* blue */
   --chart-5: oklch(0.63 0.24 15); /* rose */
-  --radius: 0.7rem;
-  --sidebar: oklch(0.975 0.005 258);
-  --sidebar-foreground: oklch(0.21 0.01 260);
-  --sidebar-primary: oklch(0.56 0.235 264);
-  --sidebar-primary-foreground: oklch(0.99 0.01 260);
-  --sidebar-accent: oklch(0.945 0.045 264);
-  --sidebar-accent-foreground: oklch(0.42 0.17 264);
-  --sidebar-border: oklch(0.915 0.006 258);
-  --sidebar-ring: oklch(0.56 0.235 264 / 0.45);
+  --radius: 1rem;
+  --shadow-card: 0 1px 2px oklch(0 0 0 / 0.04), 0 10px 28px -10px oklch(0 0 0 / 0.1);
+  --sidebar: oklch(1 0 0);
+  --sidebar-foreground: oklch(0.205 0 0);
+  --sidebar-primary: oklch(0.52 0.25 291);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.94 0.045 291);
+  --sidebar-accent-foreground: oklch(0.44 0.19 291);
+  --sidebar-border: oklch(0.915 0 0);
+  --sidebar-ring: oklch(0.52 0.25 291 / 0.4);
 }
 
 @layer base {
