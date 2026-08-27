@@ -63,7 +63,7 @@ export function LoginForm() {
       className="relative flex min-h-screen items-center justify-center overflow-hidden p-6"
       style={{
         background:
-          "radial-gradient(60% 55% at 50% 0%, color-mix(in oklch, var(--primary), transparent 70%), transparent), var(--background)",
+          "radial-gradient(70% 50% at 50% 0%, color-mix(in oklch, var(--primary), transparent 92%), transparent), var(--background)",
       }}
     >
 

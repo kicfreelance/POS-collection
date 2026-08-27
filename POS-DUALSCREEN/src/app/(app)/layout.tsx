@@ -68,7 +68,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       className="relative flex min-h-screen flex-col text-foreground"
       style={{
         background:
-          "radial-gradient(60% 60% at 50% 0%, color-mix(in oklch, var(--primary), transparent 65%), transparent), var(--background)",
+          "radial-gradient(70% 45% at 50% 0%, color-mix(in oklch, var(--primary), transparent 93%), transparent), var(--background)",
       }}
     >
       <header className="sticky top-0 z-40 flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-border/60 bg-background/70 px-8 py-3 backdrop-blur-md print:hidden">
