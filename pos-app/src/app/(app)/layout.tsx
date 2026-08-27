@@ -6,6 +6,7 @@ import { pool } from "@/lib/db";
 import { getCurrentUser, hasPermission } from "@/lib/auth/rbac";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ShortcutProvider } from "@/components/keyboard/shortcut-provider";
 import { UserMenu } from "./user-menu";
 import { ManageMenu, type ManageLink } from "./manage-menu";
 
@@ -99,7 +100,9 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           <UserMenu fullName={user.fullName} roleName={user.roleName} hasOpenShift={hasOpenShift} />
         </div>
       </header>
-      <main className="flex flex-1 flex-col">{children}</main>
+      <main className="flex flex-1 flex-col">
+        <ShortcutProvider>{children}</ShortcutProvider>
+      </main>
     </div>
   );
 }

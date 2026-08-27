@@ -8,6 +8,9 @@ import { MoreHorizontal, Pencil, Tag, Power, PowerOff } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { NavList, useNavItem } from "@/components/nav-list";
+import { useRegisterNewAction } from "@/hooks/use-page-shortcut";
+import { cn } from "@/lib/utils";
 import {
   Table,
   TableBody,
@@ -42,7 +45,12 @@ export function ProductsTable({
   products: ProductListRow[];
   canManage: boolean;
 }) {
+  const router = useRouter();
   const [query, setQuery] = useState("");
+
+  useRegisterNewAction(() => {
+    if (canManage) router.push("/products/new");
+  }, "New product");
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -58,6 +66,8 @@ export function ProductsTable({
   return (
     <div className="grid gap-4">
       <Input
+        data-primary-search
+        autoFocus
         value={query}
         onChange={(event) => setQuery(event.target.value)}
         placeholder="Search by name, SKU, or barcode..."
@@ -76,9 +86,14 @@ export function ProductsTable({
             {canManage && <TableHead className="w-10" />}
           </TableRow>
         </TableHeader>
-        <TableBody>
-          {filtered.map((product) => (
-            <ProductRow key={product.id} product={product} canManage={canManage} />
+        <NavList
+          render={<TableBody />}
+          itemCount={filtered.length}
+          getHref={(i) => (canManage ? `/products/${filtered[i].id}/edit` : null)}
+          getTypeaheadLabel={(i) => filtered[i].name}
+        >
+          {filtered.map((product, i) => (
+            <ProductRow key={product.id} index={i} product={product} canManage={canManage} />
           ))}
           {filtered.length === 0 && (
             <TableRow>
@@ -87,15 +102,24 @@ export function ProductsTable({
               </TableCell>
             </TableRow>
           )}
-        </TableBody>
+        </NavList>
       </Table>
     </div>
   );
 }
 
-function ProductRow({ product, canManage }: { product: ProductListRow; canManage: boolean }) {
+function ProductRow({
+  product,
+  canManage,
+  index,
+}: {
+  product: ProductListRow;
+  canManage: boolean;
+  index: number;
+}) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const navItem = useNavItem(index);
 
   function handleToggleActive() {
     startTransition(async () => {
@@ -110,7 +134,17 @@ function ProductRow({ product, canManage }: { product: ProductListRow; canManage
   }
 
   return (
-    <TableRow>
+    <TableRow
+      {...navItem}
+      onClick={() => {
+        navItem.onClick();
+        if (canManage) router.push(`/products/${product.id}/edit`);
+      }}
+      className={cn(
+        "outline-none data-[active]:bg-accent/60",
+        canManage && "cursor-pointer",
+      )}
+    >
       <TableCell className="font-medium">{product.name}</TableCell>
       <TableCell className="text-muted-foreground">{product.sku}</TableCell>
       <TableCell className="text-muted-foreground">{product.barcode ?? "—"}</TableCell>
@@ -123,7 +157,7 @@ function ProductRow({ product, canManage }: { product: ProductListRow; canManage
         </Badge>
       </TableCell>
       {canManage && (
-        <TableCell>
+        <TableCell onClick={(e) => e.stopPropagation()}>
           <DropdownMenu>
             <DropdownMenuTrigger
               render={

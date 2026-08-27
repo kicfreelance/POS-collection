@@ -31,6 +31,8 @@ import {
 } from "@/components/ui/select";
 import { bestPromotionForLine, type PromotionRule } from "@/lib/promotions";
 import { PrinterPicker } from "@/components/printer-picker";
+import { useListNavigation } from "@/hooks/use-list-navigation";
+import { usePageShortcut } from "@/hooks/use-page-shortcut";
 import { checkCoupon, type ManualDiscountInput, type SaleResult } from "./actions";
 import { AddItemDialog, type AddItemResult } from "./add-item-dialog";
 import { PayDialog } from "./pay-dialog";
@@ -305,6 +307,41 @@ export function CheckoutScreen({
     }
   }
 
+  const gridNav = useListNavigation({
+    itemCount: filteredProducts.length,
+    columns: 5,
+    onActivate: (i) => addProduct(filteredProducts[i]),
+    getTypeaheadLabel: (i) => filteredProducts[i].name,
+  });
+  const cartNav = useListNavigation({
+    itemCount: cart.length,
+    onActivate: (i) => editLine(cart[i]),
+  });
+
+  usePageShortcut({
+    keys: "F2",
+    label: "New sale (clear cart)",
+    group: "Checkout",
+    run: () => {
+      clearCart();
+      focusSearch();
+    },
+  });
+  usePageShortcut({
+    keys: "F9",
+    label: "Pay",
+    group: "Checkout",
+    run: () => {
+      if (cart.length > 0) setPayOpen(true);
+    },
+  });
+  usePageShortcut({
+    keys: "Enter",
+    label: "Add / edit the highlighted item",
+    group: "Checkout",
+    run: () => {},
+  });
+
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "F2") {
@@ -416,28 +453,29 @@ export function CheckoutScreen({
               Scan or select a product to start a sale.
             </p>
           ) : (
-            <div className="grid gap-2">
-              {cart.map((line) => {
+            <div className="grid gap-2" {...cartNav.containerProps}>
+              {cart.map((line, i) => {
                 const promo = linePromotions.get(line.key);
                 const productDiscount = lineProductDiscount(line);
                 const nudge = line.unitCode === line.baseUnit && line.baseUnit !== "pcs" ? 0.1 : 1;
                 const stop = (e: React.SyntheticEvent) => e.stopPropagation();
+                const navProps = cartNav.getItemProps(i);
                 return (
                   <div
                     key={line.key}
                     role="button"
-                    tabIndex={0}
-                    onClick={() => editLine(line)}
+                    {...navProps}
+                    onClick={() => {
+                      navProps.onClick();
+                      editLine(line);
+                    }}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        editLine(line);
-                      } else if (e.key === "Delete" || e.key === "Backspace") {
+                      if (e.key === "Delete" || e.key === "Backspace") {
                         e.preventDefault();
                         removeLine(line.key);
                       }
                     }}
-                    className="cursor-pointer rounded-lg border border-border/60 bg-card p-3 shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="cursor-pointer rounded-lg border border-border/60 bg-card p-3 shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring data-[active]:border-primary data-[active]:ring-2 data-[active]:ring-ring/40"
                   >
                     <div className="mb-1 flex items-start justify-between gap-2">
                       <p className="text-sm font-medium">{line.name}</p>
@@ -607,6 +645,7 @@ export function CheckoutScreen({
             <Search className="pointer-events-none absolute top-1/2 left-3 size-5 -translate-y-1/2 text-muted-foreground" />
             <Input
               ref={searchInputRef}
+              data-primary-search
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={handleSearchKeyDown}
@@ -617,12 +656,19 @@ export function CheckoutScreen({
           </div>
           <Popover>
             <PopoverTrigger render={<Button variant="outline" size="icon"><Keyboard /></Button>} />
-            <PopoverContent align="end" className="w-64 text-sm">
+            <PopoverContent align="end" className="w-72 text-sm">
               <p className="mb-2 font-medium">Keyboard shortcuts</p>
               <ul className="grid gap-1 text-muted-foreground">
-                <li className="flex justify-between"><span>New sale</span><Badge variant="outline">F2</Badge></li>
-                <li className="flex justify-between"><span>Pay</span><Badge variant="outline">F9</Badge></li>
-                <li className="flex justify-between"><span>Cancel / focus search</span><Badge variant="outline">Esc</Badge></li>
+                <li className="flex justify-between gap-3"><span>New sale</span><Badge variant="outline">F2</Badge></li>
+                <li className="flex justify-between gap-3"><span>Pay</span><Badge variant="outline">F9</Badge></li>
+                <li className="flex justify-between gap-3"><span>Move product grid / cart</span><Badge variant="outline">arrows</Badge></li>
+                <li className="flex justify-between gap-3"><span>Add / edit highlighted item</span><Badge variant="outline">Enter</Badge></li>
+                <li className="flex justify-between gap-3"><span>Set quantity</span><Badge variant="outline">type a number</Badge></li>
+                <li className="flex justify-between gap-3"><span>Switch unit (in popup)</span><Badge variant="outline">← / →</Badge></li>
+                <li className="flex justify-between gap-3"><span>Pick batch (in popup)</span><Badge variant="outline">↑ / ↓</Badge></li>
+                <li className="flex justify-between gap-3"><span>Remove highlighted line</span><Badge variant="outline">Del</Badge></li>
+                <li className="flex justify-between gap-3"><span>Cancel / focus search</span><Badge variant="outline">Esc</Badge></li>
+                <li className="flex justify-between gap-3"><span>All shortcuts</span><Badge variant="outline">?</Badge></li>
               </ul>
             </PopoverContent>
           </Popover>
@@ -649,13 +695,17 @@ export function CheckoutScreen({
           ))}
         </div>
 
-        <div className="grid flex-1 auto-rows-max grid-cols-2 gap-3 overflow-y-auto p-6 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-          {filteredProducts.map((product) => (
+        <div
+          {...gridNav.containerProps}
+          className="grid flex-1 auto-rows-max grid-cols-2 gap-3 overflow-y-auto p-6 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
+        >
+          {filteredProducts.map((product, idx) => (
             <button
               key={product.id}
               type="button"
+              {...gridNav.getItemProps(idx)}
               onClick={() => addProduct(product)}
-              className="flex flex-col items-start gap-1 rounded-lg border border-border/60 bg-card p-3 text-left shadow-sm transition-transform hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md active:translate-y-0"
+              className="flex flex-col items-start gap-1 rounded-lg border border-border/60 bg-card p-3 text-left shadow-sm outline-none transition-transform hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring active:translate-y-0 data-[active]:border-primary data-[active]:ring-2 data-[active]:ring-ring/50"
             >
               <span className="line-clamp-2 text-sm font-medium">{product.name}</span>
               <span className="text-xs text-muted-foreground">{product.sku}</span>
