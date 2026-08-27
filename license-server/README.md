@@ -16,25 +16,43 @@ Vercel's free plan is non-commercial only and bundles no database — don't use 
 paid product's licensing backend. **Railway Hobby (~$5/mo) + Railway Postgres** is the
 fit: commercial-OK, always on, DB in the same project.
 
-### Deploy
+### Deployed
 
-1. `railway init` (or create a project in the dashboard) and push this folder.
-2. **Add a Postgres service** to the project.
-3. Set service variables on the license-server service:
+- **Project**: `license-server` on Railway (`kicfreelance's Projects`)
+- **Live**: <https://license-server-app-production.up.railway.app>
+- **Services**: `license-server-app` (this Next.js app) + `Postgres`
+- Production secrets live in `.env.production.local` (gitignored). `LICENSE_SIGNING_PUBLIC_KEY`
+  is also served at `/api/v1/public-key`.
+
+Redeploy after code changes:
+
+```bash
+cd license-server
+railway up            # builds & deploys this folder to license-server-app
+railway logs          # tail runtime logs
+```
+
+### First-time deploy (already done — for reference)
+
+1. `railway init -n license-server`
+2. `railway add --database postgres`
+3. `railway add --service license-server-app --variables "K=V" ...` — set:
 
    | Variable | Value |
    |---|---|
-   | `DATABASE_URL` | `${{ Postgres.DATABASE_URL }}` (reference the Postgres service) |
-   | `DATABASE_SSL` | *empty* for private networking; `require` if you point at the public proxy |
+   | `DATABASE_URL` | `${{ Postgres.DATABASE_URL }}` (private networking) |
+   | `DATABASE_SSL` | `require` — Railway's Postgres image is `postgres-ssl` |
    | `ADMIN_USER` / `ADMIN_PASSWORD` | admin web UI (HTTP Basic on `/admin`) |
    | `ADMIN_API_TOKEN` | bearer token for the admin REST API |
    | `LICENSE_SIGNING_PRIVATE_KEY` | from `npm run keypair` |
    | `LICENSE_SIGNING_PUBLIC_KEY` | from `npm run keypair` (also embed in the apps) |
    | `LICENSE_TOKEN_TTL_DAYS` | `30` (offline budget for the desktop apps) |
 
-4. `railway.json` already sets the start command to run migrations then boot:
-   `npm run db:migrate && npm run start`. Healthcheck: `/api/health`.
-5. Generate the migration once and commit it: `npm run db:generate`.
+4. `railway up`, then `railway domain` for the public URL.
+
+`railway.json` sets the start command to `npm run db:migrate && npm run start`
+(migrations run on every boot; `scripts/migrate.mjs` needs only runtime deps).
+Healthcheck: `/api/health`. Commit the generated migration (`npm run db:generate`).
 
 ### Local dev
 
