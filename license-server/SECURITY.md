@@ -14,9 +14,10 @@ Here is exactly what this design does and does not stop.
 | **Fake / MITM licence server** | Every entitlement token is signed by the private key. A spoofed server can return JSON, but `verifyToken()` rejects anything without a valid signature. No cert pinning needed. |
 | **Copy the licence file to another PC** | The token embeds the machine `fingerprint`; `evaluate()` fails if it doesn't match. The local cache is also HMAC-tagged with a key derived from that fingerprint, so it can't be moved or hand-edited. |
 | **Edit the cached token** (extend expiry, flip status) | Any edit breaks the Ed25519 signature → treated as no licence. |
-| **System clock rollback** (freeze an expired offline licence) | The cache stores `seenTime`, a monotonic high-water mark advanced on every launch and every server contact. If the wall clock is more than 24 h behind it, the licence drops to "grace" at best and then expires on schedule. |
+| **System clock rollback** (time-limited licences only) | The cache stores `seenTime`, a monotonic high-water mark advanced on every launch. Wall clock >24 h behind it → "grace" at best, then expires on schedule. Perpetual licences have no expiry so there is nothing to roll back to. |
 | **Replay someone else's activation response** | The token is bound to the requester's fingerprint. Replaying another machine's token → `wrong_machine`. |
-| **Share one key with many installs** | Key is bound to one machine (`bound_fingerprint`); moves are capped (`maxTransfers`, default 3); the server logs every activation/transfer and the dual-screen Server reports its live seat count on each heartbeat, so abuse is visible in `/admin`. |
+| **"My PC died, activate me on a new one" — repeatedly** | Activation is permanent and **counted**. A new machine consumes one of `maxActivations` slots (default 1); once used up the server returns `activation_limit_reached` and only the vendor can raise the cap or delete a machine in `/admin`. Every attempt — including refused ones — is logged and shown per-licence, so "this key = 5 machines in 2 months" is visible. There is no self-service transfer. |
+| **Reinstall Windows / the app to look like a new machine** | Same `MachineGuid` → same fingerprint → recognised as the same machine → free, no slot consumed. Only a genuinely different PC costs a slot. |
 | **Run more dual-screen terminals than paid for** | The Server counts connected terminals in-process and refuses registrations past `seatLimit`; terminals never get their own token. |
 
 ## What still works for a determined attacker
@@ -44,8 +45,18 @@ patching.
   `LICENSE_SIGNING_PRIVATE_KEY`/`_PUBLIC_KEY` on Railway, ship a new app build
   with the new `LICENSE_PUBLIC_KEY_B64`. Old tokens stop verifying, so do this
   only for a compromise.
-- **Token lifetime** (`LICENSE_TOKEN_TTL_DAYS`, default 30) + client
-  `OFFLINE_GRACE_DAYS` (5) = how long a revoked licence keeps working offline.
-  Shorten for tighter control, lengthen for customers with poor connectivity.
-- **Revocation** takes effect at the revoked machine's next heartbeat (≤12 h),
-  or immediately on its next launch if it's online.
+- **Perpetual vs time-limited.** A licence minted with no expiry date is
+  **perpetual**: the token carries `perpetual: true`, never expires, and works
+  offline forever after one activation. `LICENSE_TOKEN_TTL_DAYS` (30) +
+  `OFFLINE_GRACE_DAYS` (5) only apply to licences given an expiry date.
+- **Revocation reaches a machine only if it comes back online.** With
+  perpetual + offline-forever, an already-activated machine that never
+  reconnects cannot be stopped from the server — this is the accepted trade-off.
+  Your controls all act at activation time: `maxActivations`, `activationLocked`,
+  per-machine `block`, and deleting a machine row.
+- **When a customer really did replace a PC:** in `/admin`, open the licence,
+  check the machine list + refused-attempt log, then either **Grant +1** (or take
+  payment first) or **Delete** the dead machine's row to free its slot.
+- **Rotate the signing key** = re-run `npm run keypair`, set the new
+  `LICENSE_SIGNING_PRIVATE_KEY`/`_PUBLIC_KEY` on Railway, ship a new app build
+  with the new `LICENSE_PUBLIC_KEY_B64`. Old tokens stop verifying — compromise only.

@@ -15,8 +15,18 @@ import {
  * A license key sold to a customer. Everything the key "means" lives here —
  * the key string itself is an opaque random token.
  *
- * `boundFingerprint` locks the key to a single installation (the standalone
- * machine, or the dual-screen SERVER machine). Terminals never appear here.
+ * Activation model (offline-forever software): an activation is PERMANENT and
+ * irreversible — an activated machine keeps running on its cached token with no
+ * further contact, so a "seat" can never be reclaimed automatically. The only
+ * control is `maxActivations`: the lifetime number of DISTINCT machines this key
+ * may activate on. Re-activating a machine already on record (OS/app reinstall,
+ * disk restore — same fingerprint) is free and unlimited. A brand-new
+ * fingerprint consumes one slot; when they run out, activation is refused and a
+ * human (vendor) must raise `maxActivations` or delete a machine row.
+ *
+ * `boundFingerprint` is now informational only ("most recent primary machine").
+ * `maxTransfers` / `transfersUsed` are DEPRECATED — kept so old rows don't
+ * break; no code path reads them any more.
  */
 export const licenses = pgTable("licenses", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -41,16 +51,21 @@ export const licenses = pgTable("licenses", {
     .notNull()
     .default("active"),
 
-  // Set on first activation; cleared by a self-service deactivate or an admin
-  // "release bind". A different fingerprint can only take over via a transfer.
+  // Informational: the most recently activated primary machine.
   boundFingerprint: text("bound_fingerprint"),
   boundAt: timestamp("bound_at", { withTimezone: true }),
 
+  // Lifetime cap on DISTINCT machines this key may ever activate on.
+  maxActivations: integer("max_activations").notNull().default(1),
+  // Hard freeze: when true, no new machine may activate regardless of the count.
+  activationLocked: boolean("activation_locked").notNull().default(false),
+
   activationCount: integer("activation_count").notNull().default(0),
+  // DEPRECATED — unused by current logic, retained for old rows.
   maxTransfers: integer("max_transfers").notNull().default(3),
   transfersUsed: integer("transfers_used").notNull().default(0),
 
-  // null => perpetual license.
+  // null => perpetual license (no time limit at all).
   expiresAt: timestamp("expires_at", { withTimezone: true }),
 
   notes: text("notes"),
@@ -59,10 +74,14 @@ export const licenses = pgTable("licenses", {
 });
 
 /**
- * One row per installation that has activated the license. In practice there is
- * exactly one active row per license (the bound machine); older rows are pruned
- * on transfer. `activeTerminals` is the seat count the Server self-reports on
- * each heartbeat.
+ * The permanent machine ledger: one row per DISTINCT machine that has ever
+ * activated the license. Rows are NEVER auto-deleted — the count of non-blocked
+ * rows is what `licenses.maxActivations` is checked against. A vendor may
+ * `blocked`-flag a row (stops re-activation, still counts) or delete it outright
+ * (frees a slot — the deliberate "yes, that old PC is really gone" action).
+ *
+ * `activeTerminals` is the seat count the dual-screen Server self-reports on
+ * each heartbeat. `reactivations` counts same-machine re-activations (reinstalls).
  */
 export const activations = pgTable(
   "activations",
@@ -85,6 +104,14 @@ export const activations = pgTable(
 
     // Seats currently in use, as last reported by the Server's heartbeat.
     activeTerminals: integer("active_terminals").notNull().default(0),
+
+    // Vendor-set: blocks further re-activation from this machine (still counts
+    // toward maxActivations — delete the row to actually free the slot).
+    blocked: boolean("blocked").notNull().default(false),
+    label: text("label"),
+    ipFirst: text("ip_first"),
+    ipLast: text("ip_last"),
+    reactivations: integer("reactivations").notNull().default(0),
 
     revoked: boolean("revoked").notNull().default(false),
     lastHeartbeatAt: timestamp("last_heartbeat_at", { withTimezone: true }),

@@ -11,8 +11,12 @@ export const dynamic = "force-dynamic";
  * POST /api/v1/deactivate
  * body: { key, fingerprint }
  *
- * Frees the seat AND releases the binding (if this machine holds it) so the
- * customer can move to another PC themselves without spending a transfer.
+ * Offline-forever model: this does NOT free an activation slot. A machine we
+ * can't contact can't be trusted to have actually stopped, so the machine stays
+ * on the ledger and keeps counting toward `maxActivations`. It only:
+ *   - marks the row `revoked` (so any future online heartbeat from it fails), and
+ *   - clears the informational `boundFingerprint`.
+ * To genuinely free a slot, a vendor deletes the machine row in /admin.
  */
 export async function POST(req: NextRequest) {
   let body: Record<string, unknown>;
@@ -31,7 +35,8 @@ export async function POST(req: NextRequest) {
   if (!license) return json({ error: "invalid_key" }, 404);
 
   await db
-    .delete(activations)
+    .update(activations)
+    .set({ revoked: true })
     .where(and(eq(activations.licenseId, license.id), eq(activations.fingerprint, fingerprint)));
 
   if (license.boundFingerprint === fingerprint) {
@@ -42,5 +47,5 @@ export async function POST(req: NextRequest) {
   }
 
   await logEvent({ licenseId: license.id, type: "deactivate", fingerprint, ip });
-  return json({ ok: true });
+  return json({ ok: true, note: "activation slot retained; a vendor must delete the machine to free it" });
 }

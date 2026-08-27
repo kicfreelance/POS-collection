@@ -13,20 +13,32 @@ export interface EntitlementPayload {
   status: License["status"];
   tokenVersion: number;
   issuedAt: number; // unix seconds
-  expiresAt: number; // unix seconds
+  expiresAt: number; // unix seconds (sentinel far-future when perpetual)
+  perpetual: boolean; // true => client ignores expiresAt entirely
 }
 
+// ~100 years — a stand-in "expiry" so the token format stays uniform for
+// perpetual licences. The client ignores it when `perpetual` is true.
+const PERPETUAL_SENTINEL = () => Math.floor(Date.now() / 1000) + 100 * 365 * 86_400;
+
 /**
- * Build + sign a fresh entitlement token. Expiry is the sooner of
- * (now + LICENSE_TOKEN_TTL_DAYS) and the license's own expiry.
+ * Build + sign a fresh entitlement token.
+ *
+ * - Perpetual licence (license.expiresAt === null): `perpetual: true`, expiry set
+ *   to a far-future sentinel. Works offline forever.
+ * - Time-limited licence: expiry = the sooner of (now + LICENSE_TOKEN_TTL_DAYS)
+ *   and the licence's own end date; the client enforces it (+ offline grace).
  */
 export function buildToken(license: License, activation: Activation) {
   const now = Math.floor(Date.now() / 1000);
-  const ttlSeconds = env.tokenTtlDays * 86_400;
-  let expiresAt = now + ttlSeconds;
+  const perpetual = license.expiresAt === null;
 
-  if (license.expiresAt) {
-    const licenseExp = Math.floor(license.expiresAt.getTime() / 1000);
+  let expiresAt: number;
+  if (perpetual) {
+    expiresAt = PERPETUAL_SENTINEL();
+  } else {
+    expiresAt = now + env.tokenTtlDays * 86_400;
+    const licenseExp = Math.floor(license.expiresAt!.getTime() / 1000);
     if (licenseExp < expiresAt) expiresAt = licenseExp;
   }
 
@@ -42,6 +54,7 @@ export function buildToken(license: License, activation: Activation) {
     tokenVersion: activation.tokenVersion,
     issuedAt: now,
     expiresAt,
+    perpetual,
   };
 
   return { token: signEntitlement(payload), expiresAt, payload };

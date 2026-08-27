@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
 /**
  * POST /api/v1/licenses  — mint a new key.
  * body: { product, edition?, seatLimit?, customerName?, customerEmail?,
- *         maxTransfers?, expiresAt?, notes? }
+ *         maxActivations?, expiresAt?, notes? }
  */
 export async function POST(req: NextRequest) {
   if (!checkAdminBearer(req)) return json({ error: "unauthorized" }, 401);
@@ -57,8 +57,8 @@ export async function POST(req: NextRequest) {
       seatLimit,
       customerName: (body.customerName as string) ?? null,
       customerEmail: (body.customerEmail as string) ?? null,
-      maxTransfers:
-        body.maxTransfers != null ? Math.trunc(Number(body.maxTransfers)) || 0 : 3,
+      maxActivations:
+        body.maxActivations != null ? Math.max(1, Math.trunc(Number(body.maxActivations)) || 1) : 1,
       expiresAt: body.expiresAt ? new Date(body.expiresAt as string) : null,
       notes: (body.notes as string) ?? null,
     })

@@ -57,7 +57,7 @@
     <div class="card" id="manageCard" style="display:none; margin-top: 1rem;">
       <label>This computer is licensed</label>
       <div id="entInfo" style="opacity:.75; font-size:.9rem;"></div>
-      <button class="secondary" id="moveBtn">Move licence to another PC…</button>
+      <button class="secondary" id="moveBtn">Deactivate on this PC…</button>
       <button id="continueBtn">Continue to POS</button>
       <div class="msg" id="msg2"></div>
     </div>
@@ -115,12 +115,12 @@
       };
 
       $("moveBtn").onclick = async () => {
-        if (!confirm("Release this licence so it can be used on another PC? This POS will stop working here until re-activated.")) return;
+        if (!confirm("Deactivate on this PC? POS will stop working here until re-activated. Note: this does NOT free up a licence slot - ask your vendor to move the licence to a new machine.")) return;
         const r = await api.release();
         const m = $("msg2");
         if (r.ok) {
           m.className = "msg ok";
-          m.textContent = "Released. You can now activate on the other PC.";
+          m.textContent = "Deactivated on this PC. Contact your vendor to activate on a different machine.";
         } else {
           m.className = "msg err";
           m.textContent = "Release failed: " + (r.error || "unknown");

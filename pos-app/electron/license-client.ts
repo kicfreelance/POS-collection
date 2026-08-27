@@ -11,7 +11,8 @@
  *     licence, so no keygen is possible and a spoofed licence server is rejected
  *     by the signature check.
  *   • Entitlement tokens are signed server-side, bound to a machine fingerprint,
- *     product-scoped, and time-limited. Verified fully offline on every launch.
+ *     and product-scoped. Verified fully offline on every launch. Perpetual
+ *     licences never expire; time-limited ones do (+ offline grace).
  *   • The local cache is HMAC-tagged (keyed off the fingerprint), so it can't be
  *     hand-edited or copied to another machine.
  *   • A monotonic `seenTime` high-water mark defeats system-clock rollback.
@@ -126,6 +127,8 @@ export interface Entitlement {
   tokenVersion: number;
   issuedAt: number;
   expiresAt: number;
+  /** true => this licence has no time limit; the client ignores expiresAt. */
+  perpetual?: boolean;
 }
 
 export function verifyToken(
@@ -245,6 +248,10 @@ export function evaluate(
     return { state: "invalid", entitlement: e, reason: "wrong_product" };
   }
 
+  // Perpetual licence: no time limit at all, so there is nothing to expire and
+  // nothing a rolled-back clock can gain.
+  if (e.perpetual) return { state: "ok", entitlement: e };
+
   const nowSec = Math.floor(Date.now() / 1000);
   const rolledBack = cache.seenTime - nowSec > CLOCK_SKEW_SEC;
   const effectiveNow = Math.max(nowSec, cache.seenTime);
@@ -305,6 +312,8 @@ const HARD_REJECTIONS = new Set([
   "suspended",
   "expired",
   "activation_revoked",
+  "activation_locked",
+  "machine_blocked",
   "not_activated",
   "invalid_key",
   "product_mismatch",
@@ -341,30 +350,22 @@ export interface ActivateCtx {
 }
 
 /**
- * Activate, transparently handling "licence bound to another machine": calls
- * `confirmTransfer` (show a dialog); if the user accepts and transfers remain,
- * retries with transfer:true. On success the (verified) token is cached.
+ * Activate this machine.
+ *
+ * Offline-forever model: there is no self-service transfer. A machine already on
+ * record re-activates for free; a new machine either fits within the licence's
+ * activation budget or the server refuses it — `LicenseError` with code
+ * `activation_limit_reached` (payload: `used`, `max`, `machines`),
+ * `activation_locked`, or `machine_blocked`. Surface those to the user with a
+ * "contact your vendor" message; only the vendor can grant another activation.
  */
 export async function activateAndCache(
   file: string,
   key: string,
   ctx: ActivateCtx,
-  confirmTransfer: (info: { boundAt?: string; transfersLeft?: number }) => Promise<boolean>,
 ): Promise<Evaluation> {
   key = key.trim().toUpperCase();
-  let res: ActivateResult;
-  try {
-    res = await post("/api/v1/activate", { key, ...ctx });
-  } catch (e) {
-    if (e instanceof LicenseError && e.code === "already_activated_elsewhere") {
-      const info = (e.data ?? {}) as { boundAt?: string; transfersLeft?: number };
-      if (typeof info.transfersLeft === "number" && info.transfersLeft <= 0) throw e;
-      if (!(await confirmTransfer(info))) throw e;
-      res = await post("/api/v1/activate", { key, ...ctx, transfer: true });
-    } else {
-      throw e;
-    }
-  }
+  const res: ActivateResult = await post("/api/v1/activate", { key, ...ctx });
 
   const ent = verifyToken(res.token);
   if (!ent || ent.fingerprint !== ctx.fingerprint) {
@@ -430,11 +431,20 @@ export async function heartbeatAndCache(
   return evaluate(loadCache(file, ctx.fingerprint), ctx.fingerprint);
 }
 
-/** "Move licence to another PC": free the seat + binding server-side, wipe local cache. */
+/**
+ * Uninstall / "stop using on this PC". Tells the server (best effort) and wipes
+ * the local cache so this machine stops working immediately.
+ *
+ * Note: in the offline-forever model this does NOT free an activation slot —
+ * the machine stays on the ledger. Only the vendor deleting the machine row in
+ * /admin frees a slot. So there is no self-service "move to another PC".
+ */
 export async function releaseLicense(file: string, fingerprint: string): Promise<void> {
   const cache = loadCache(file, fingerprint);
   try {
     if (cache) await post("/api/v1/deactivate", { key: cache.key, fingerprint });
+  } catch {
+    /* best effort */
   } finally {
     clearCache(file);
   }

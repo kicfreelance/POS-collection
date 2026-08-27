@@ -54,8 +54,17 @@ function humanError(e: LicenseError): string {
       return "This licence has expired.";
     case "product_mismatch":
       return "That key is not a Dual-Screen licence.";
-    case "transfer_limit_reached":
-      return "This licence has been moved too many times. Contact your vendor to release it.";
+    case "activation_limit_reached": {
+      const d = (e.data ?? {}) as { used?: number; max?: number };
+      return (
+        `This licence is already activated on ${d.used ?? "the maximum number of"} ` +
+        `Server machine(s) (limit ${d.max ?? "reached"}). Contact your vendor to add this one.`
+      );
+    }
+    case "activation_locked":
+      return "This licence is locked to its current machine. Contact your vendor.";
+    case "machine_blocked":
+      return "This machine has been blocked for this licence. Contact your vendor.";
     case "network_error":
       return "Could not reach the licence server. Check the internet connection and try again.";
     default:
@@ -89,26 +98,12 @@ function registerIpc(): void {
     const key = String(rawKey ?? "").trim();
     if (!key) return { ok: false, error: "empty", detail: "Enter a licence key." };
     try {
-      const ev = await activateAndCache(
-        cacheFile(),
-        key,
-        { fingerprint: fingerprint(), role: ROLE, hostname: os.hostname(), appVersion: app.getVersion() },
-        async (info) => {
-          const res = await dialog.showMessageBox({
-            type: "question",
-            buttons: ["Move licence to this PC", "Cancel"],
-            defaultId: 0,
-            cancelId: 1,
-            noLink: true,
-            message: "This licence is already active on another computer.",
-            detail:
-              `Transfers remaining: ${info.transfersLeft ?? "?"}.\n\n` +
-              "Move it to this computer now? The other computer will stop working " +
-              "the next time it checks in.",
-          });
-          return res.response === 0;
-        },
-      );
+      const ev = await activateAndCache(cacheFile(), key, {
+        fingerprint: fingerprint(),
+        role: ROLE,
+        hostname: os.hostname(),
+        appVersion: app.getVersion(),
+      });
       const ok = ev.state === "ok" || ev.state === "grace";
       return { ok, state: ev.state, reason: ev.reason };
     } catch (e) {

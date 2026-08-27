@@ -8,6 +8,13 @@
       "when": 1787819937838,
       "tag": "0000_cool_blur",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1787823074589,
+      "tag": "0001_complete_outlaw_kid",
+      "breakpoints": true
     }
   ]
 }

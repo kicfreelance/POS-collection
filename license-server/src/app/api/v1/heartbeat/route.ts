@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
   const invalidReason =
     license.status !== "active"
       ? license.status
-      : activation.revoked
+      : activation.revoked || activation.blocked
         ? "activation_revoked"
         : license.expiresAt && license.expiresAt.getTime() < Date.now()
           ? "expired"
@@ -71,6 +71,7 @@ export async function POST(req: NextRequest) {
       activeTerminals,
       appVersion: (body.appVersion as string) ?? activation.appVersion,
       hostname: (body.hostname as string) ?? activation.hostname,
+      ipLast: ip,
     })
     .where(eq(activations.id, activation.id));
 
