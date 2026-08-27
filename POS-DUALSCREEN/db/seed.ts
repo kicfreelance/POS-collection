@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import { Client } from "pg";
 import bcrypt from "bcryptjs";
 import crypto from "node:crypto";
@@ -72,7 +73,8 @@ async function upsertRole(
   return rows[0];
 }
 
-export async function seedDatabase(): Promise<void> {
+export async function seedDatabase(): Promise<{ createdAdminPin: string } | null> {
+  let createdAdminPin: string | null = null;
   const client = new Client({ connectionString: process.env.DATABASE_URL });
   await client.connect();
 
@@ -109,6 +111,7 @@ export async function seedDatabase(): Promise<void> {
         `INSERT INTO users (full_name, username, pin_hash, role_id) VALUES ($1, $2, $3, $4)`,
         ["Administrator", "admin", pinHash, superAdminRole.id],
       );
+      createdAdminPin = pin;
 
       console.log("============================================");
       console.log(" First-run setup: created default admin user");
@@ -116,6 +119,24 @@ export async function seedDatabase(): Promise<void> {
       console.log(` PIN:      ${pin}`);
       console.log(" Change this PIN after logging in.");
       console.log("============================================");
+
+      // Persist the one-time PIN somewhere the operator can actually find it —
+      // a packaged GUI app has no visible console. main.ts also shows it in a
+      // dialog and sets POS_CRED_FILE to a path in the app's user-data dir.
+      const credFile = process.env.POS_CRED_FILE;
+      if (credFile) {
+        try {
+          fs.writeFileSync(
+            credFile,
+            `POS — first-run login\r\n\r\nUsername: admin\r\nPIN: ${pin}\r\n\r\n` +
+              `Created ${new Date().toISOString()}. Change this PIN after logging in.\r\n` +
+              `This file is safe to delete once you have noted the PIN.\r\n`,
+            "utf8",
+          );
+        } catch {
+          /* best effort */
+        }
+      }
     }
 
     for (const unit of UNITS) {
@@ -136,4 +157,6 @@ export async function seedDatabase(): Promise<void> {
   } finally {
     await client.end();
   }
+
+  return createdAdminPin ? { createdAdminPin } : null;
 }

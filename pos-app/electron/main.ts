@@ -41,7 +41,22 @@ app.whenReady().then(async () => {
 
     await startEmbeddedPostgres();
     await runMigrations(path.join(app.getAppPath(), "db", "migrations"));
-    await seedDatabase();
+
+    const credFile = path.join(app.getPath("userData"), "FIRST-RUN-LOGIN.txt");
+    process.env.POS_CRED_FILE = credFile;
+    const seedResult = await seedDatabase();
+    if (seedResult) {
+      await dialog.showMessageBox({
+        type: "info",
+        buttons: ["OK"],
+        noLink: true,
+        message: "POS first-run login created",
+        detail:
+          `Username:  admin\nPIN:  ${seedResult.createdAdminPin}\n\n` +
+          `This was also saved to:\n${credFile}\n\n` +
+          `Please change the PIN after logging in.`,
+      });
+    }
 
     const url = app.isPackaged
       ? await startProductionServer()
