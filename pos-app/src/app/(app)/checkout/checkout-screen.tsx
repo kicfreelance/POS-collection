@@ -32,6 +32,7 @@ import {
 import { bestPromotionForLine, type PromotionRule } from "@/lib/promotions";
 import { PrinterPicker } from "@/components/printer-picker";
 import { checkCoupon, type ManualDiscountInput, type SaleResult } from "./actions";
+import { AddItemDialog, type AddItemResult } from "./add-item-dialog";
 import { PayDialog } from "./pay-dialog";
 import { ManualDiscountDialog } from "./manual-discount-dialog";
 import { QuickLinksMenu, buildQuickLinks, type QuickLinkFlags } from "./quick-links";
@@ -60,12 +61,20 @@ function newLineFromProduct(product: ProductForSale): CartLine {
     unitCode: product.baseUnit,
     unitName: product.baseUnitName,
     subUnit: product.subUnit,
+    subUnits: product.subUnits,
     quantity: 1,
     sellingPrice: product.sellingPrice,
     taxRate: product.taxRate,
     discountType: product.discountType,
     discountValue: product.discountValue,
+    batchId: null,
+    applyProductDiscount: true,
   };
+}
+
+function unitNameFor(product: ProductForSale, unitCode: string): string {
+  if (unitCode === product.baseUnit) return product.baseUnitName;
+  return product.subUnits.find((u) => u.code === unitCode)?.name ?? unitCode;
 }
 
 export function CheckoutScreen({
@@ -101,9 +110,13 @@ export function CheckoutScreen({
   const [coupon, setCoupon] = useState<{ code: string; discountAmount: number } | null>(null);
   const [couponChecking, setCouponChecking] = useState(false);
   const [customerId, setCustomerId] = useState<string>(WALK_IN);
+  const [addItem, setAddItem] = useState<{ product: ProductForSale; line: CartLine | null } | null>(
+    null,
+  );
   const searchInputRef = useRef<HTMLInputElement>(null);
   const now = useMemo(() => new Date(), []);
   const selectedCustomer = customers.find((c) => c.id === customerId) ?? null;
+  const productsById = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
 
   const barcodeIndex = useMemo(() => {
     const map = new Map<string, ProductForSale>();
@@ -179,17 +192,64 @@ export function CheckoutScreen({
   }, []);
 
   function addProduct(product: ProductForSale) {
+    setAddItem({ product, line: null });
+  }
+
+  function editLine(line: CartLine) {
+    const product = productsById.get(line.productId);
+    if (!product) {
+      toast.error("This product is no longer available — remove and re-add it.");
+      return;
+    }
+    setAddItem({ product, line });
+  }
+
+  function handleAddItemSubmit(result: AddItemResult) {
+    if (!addItem) return;
+    const { product, line: editing } = addItem;
+    const unitName = unitNameFor(product, result.unitCode);
+
     setCart((prev) => {
-      const existing = prev.find(
-        (line) => line.productId === product.id && line.unitCode === product.baseUnit,
-      );
-      if (existing) {
-        return prev.map((line) =>
-          line.key === existing.key ? { ...line, quantity: line.quantity + 1 } : line,
+      if (editing) {
+        return prev.map((l) =>
+          l.key === editing.key
+            ? {
+                ...l,
+                unitCode: result.unitCode,
+                unitName,
+                quantity: result.quantity,
+                batchId: result.batchId,
+                applyProductDiscount: result.applyProductDiscount,
+              }
+            : l,
         );
       }
-      return [...prev, newLineFromProduct(product)];
+      const existing = prev.find(
+        (l) =>
+          l.productId === product.id &&
+          l.unitCode === result.unitCode &&
+          l.batchId === result.batchId &&
+          l.applyProductDiscount === result.applyProductDiscount,
+      );
+      if (existing) {
+        return prev.map((l) =>
+          l.key === existing.key ? { ...l, quantity: l.quantity + result.quantity } : l,
+        );
+      }
+      return [
+        ...prev,
+        {
+          ...newLineFromProduct(product),
+          unitCode: result.unitCode,
+          unitName,
+          quantity: result.quantity,
+          batchId: result.batchId,
+          applyProductDiscount: result.applyProductDiscount,
+        },
+      ];
     });
+    setAddItem(null);
+    focusSearch();
   }
 
   function handleSearchKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
@@ -213,18 +273,6 @@ export function CheckoutScreen({
   function updateQuantity(key: string, quantity: number) {
     setCart((prev) =>
       prev.map((line) => (line.key === key ? { ...line, quantity: Math.max(0, quantity) } : line)),
-    );
-  }
-
-  function toggleUnit(key: string) {
-    setCart((prev) =>
-      prev.map((line) => {
-        if (line.key !== key || !line.subUnit) return line;
-        const usingBase = line.unitCode === line.baseUnit;
-        return usingBase
-          ? { ...line, unitCode: line.subUnit.code, unitName: line.subUnit.name }
-          : { ...line, unitCode: line.baseUnit, unitName: line.baseUnitName };
-      }),
     );
   }
 
@@ -296,6 +344,8 @@ export function CheckoutScreen({
     productId: line.productId,
     unitCode: line.unitCode,
     quantity: line.quantity,
+    batchId: line.batchId,
+    applyProductDiscount: line.applyProductDiscount,
   }));
 
   return (
@@ -370,28 +420,48 @@ export function CheckoutScreen({
               {cart.map((line) => {
                 const promo = linePromotions.get(line.key);
                 const productDiscount = lineProductDiscount(line);
+                const nudge = line.unitCode === line.baseUnit && line.baseUnit !== "pcs" ? 0.1 : 1;
+                const stop = (e: React.SyntheticEvent) => e.stopPropagation();
                 return (
                   <div
                     key={line.key}
-                    className="rounded-lg border border-border/60 bg-card p-3 shadow-sm"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => editLine(line)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        editLine(line);
+                      } else if (e.key === "Delete" || e.key === "Backspace") {
+                        e.preventDefault();
+                        removeLine(line.key);
+                      }
+                    }}
+                    className="cursor-pointer rounded-lg border border-border/60 bg-card p-3 shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <div className="mb-1 flex items-start justify-between gap-2">
                       <p className="text-sm font-medium">{line.name}</p>
                       <Button
                         variant="ghost"
                         size="icon-xs"
-                        onClick={() => removeLine(line.key)}
+                        onClick={(e) => {
+                          stop(e);
+                          removeLine(line.key);
+                        }}
                         className="text-muted-foreground hover:text-destructive"
                       >
                         <Trash2 className="size-4" />
                       </Button>
                     </div>
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5" onClick={stop}>
                         <Button
                           variant="outline"
                           size="icon-xs"
-                          onClick={() => updateQuantity(line.key, line.quantity - (line.baseUnit === "pcs" ? 1 : 0.1))}
+                          onClick={(e) => {
+                            stop(e);
+                            updateQuantity(line.key, line.quantity - nudge);
+                          }}
                         >
                           <Minus className="size-3.5" />
                         </Button>
@@ -399,27 +469,30 @@ export function CheckoutScreen({
                           type="number"
                           value={line.quantity}
                           min="0"
-                          step={line.baseUnit === "pcs" ? 1 : 0.01}
+                          step={line.unitCode === line.baseUnit && line.baseUnit !== "pcs" ? 0.01 : 1}
                           onChange={(e) => updateQuantity(line.key, Number(e.target.value))}
                           className="h-7 w-16 text-center text-sm"
                         />
                         <Button
                           variant="outline"
                           size="icon-xs"
-                          onClick={() => updateQuantity(line.key, line.quantity + (line.baseUnit === "pcs" ? 1 : 0.1))}
+                          onClick={(e) => {
+                            stop(e);
+                            updateQuantity(line.key, line.quantity + nudge);
+                          }}
                         >
                           <Plus className="size-3.5" />
                         </Button>
-                        {line.subUnit && (
-                          <button
-                            type="button"
-                            onClick={() => toggleUnit(line.key)}
-                            className="ml-1 rounded border border-border/60 px-1.5 py-0.5 text-xs text-muted-foreground hover:text-foreground"
-                          >
-                            {line.unitName}
-                          </button>
-                        )}
-                        {!line.subUnit && <span className="text-xs text-muted-foreground">{line.unitName}</span>}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            stop(e);
+                            editLine(line);
+                          }}
+                          className="ml-1 rounded border border-border/60 px-1.5 py-0.5 text-xs text-muted-foreground hover:text-foreground"
+                        >
+                          {line.unitName}
+                        </button>
                       </div>
                       <span className="text-sm font-semibold">{lineTotal(line, taxInclusive).toFixed(2)}</span>
                     </div>
@@ -612,6 +685,24 @@ export function CheckoutScreen({
         isCreditCustomer={selectedCustomer?.isCreditCustomer ?? false}
         onSuccess={handlePaySuccess}
       />
+
+      {addItem && (
+        <AddItemDialog
+          key={`${addItem.product.id}:${addItem.line?.key ?? "new"}`}
+          open
+          onOpenChange={(next) => {
+            if (!next) {
+              setAddItem(null);
+              focusSearch();
+            }
+          }}
+          product={addItem.product}
+          editingLine={addItem.line}
+          currencySymbol={currencySymbol}
+          taxInclusive={taxInclusive}
+          onSubmit={handleAddItemSubmit}
+        />
+      )}
     </div>
   );
 }

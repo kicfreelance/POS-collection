@@ -17,6 +17,10 @@ export interface CartLineInput {
   productId: string;
   unitCode: string;
   quantity: number;
+  /** Explicit batch to draw from; omitted / null => automatic FIFO. */
+  batchId?: string | null;
+  /** false => skip this product's own discount for this line. Defaults to true. */
+  applyProductDiscount?: boolean;
 }
 
 export interface PaymentInput {
@@ -188,6 +192,7 @@ export async function createSale(
       lineTax: number;
       lineTotal: number;
       promotionId: string | null;
+      batchId: string | null;
     }[] = [];
 
     for (const line of lines) {
@@ -234,11 +239,14 @@ export async function createSale(
       }
 
       const lineSub = Math.round(unitPrice * line.quantity * 100) / 100;
-      const productDiscount = productDiscountAmount(
-        product.discount_type,
-        product.discount_value != null ? Number(product.discount_value) : null,
-        lineSub,
-      );
+      const productDiscount =
+        line.applyProductDiscount === false
+          ? 0
+          : productDiscountAmount(
+              product.discount_type,
+              product.discount_value != null ? Number(product.discount_value) : null,
+              lineSub,
+            );
 
       const promoMatch = bestPromotionForLine(
         {
@@ -279,6 +287,7 @@ export async function createSale(
         lineTax: lineTaxAmount,
         lineTotal: lineTotalAmount,
         promotionId: promoMatch?.promotionId ?? null,
+        batchId: line.batchId ?? null,
       });
     }
 
@@ -445,7 +454,12 @@ export async function createSale(
       );
       const saleItemId = itemRows[0].id;
 
-      const consumed = await deductStockFifo(client, line.productId, line.baseQuantity);
+      const consumed = await deductStockFifo(
+        client,
+        line.productId,
+        line.baseQuantity,
+        line.batchId,
+      );
       for (const batch of consumed) {
         await client.query(
           `INSERT INTO sale_item_batches (sale_item_id, batch_id, quantity, cost_price) VALUES ($1,$2,$3,$4)`,

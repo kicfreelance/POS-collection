@@ -11,11 +11,15 @@ export interface BatchConsumption {
  * the product's batches oldest-received-first, and returns which batches were
  * drawn from so the sale can keep a COGS trail regardless of the costing
  * method chosen later in Settings.
+ *
+ * `preferBatchId`, when given, is drawn from first; any overflow then falls
+ * back to FIFO across the remaining batches.
  */
 export async function deductStockFifo(
   client: PoolClient,
   productId: string,
   baseQuantity: number,
+  preferBatchId: string | null = null,
 ): Promise<BatchConsumption[]> {
   let remaining = baseQuantity;
   const consumed: BatchConsumption[] = [];
@@ -27,9 +31,10 @@ export async function deductStockFifo(
   }>(
     `SELECT id, quantity_remaining, cost_price FROM batches
      WHERE product_id = $1 AND quantity_remaining > 0
-     ORDER BY received_date ASC, created_at ASC
+     ORDER BY (CASE WHEN $2::uuid IS NOT NULL AND id = $2::uuid THEN 0 ELSE 1 END),
+              received_date ASC, created_at ASC
      FOR UPDATE`,
-    [productId],
+    [productId, preferBatchId],
   );
 
   for (const batch of batches) {

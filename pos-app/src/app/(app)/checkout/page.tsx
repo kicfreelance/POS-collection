@@ -22,9 +22,10 @@ interface ProductQueryRow {
   tax_rate: string;
   discount_type: "percentage" | "flat" | null;
   discount_value: string | null;
-  sub_unit: string | null;
-  sub_unit_name: string | null;
-  sub_unit_factor: string | null;
+  sub_units: { code: string; name: string; factor: string | number }[] | null;
+  batches:
+    | { id: string; batchNumber: string; quantityRemaining: string | number; expiryDate: string | null }[]
+    | null;
   image_data_url: string | null;
 }
 
@@ -70,11 +71,29 @@ export default async function CheckoutPage() {
       pool.query<ProductQueryRow>(
         `SELECT p.id, p.name, p.sku, p.barcode, p.category_id, p.base_unit,
                 bu.name AS base_unit_name, p.selling_price, p.tax_rate, p.discount_type, p.discount_value,
-                uc.sub_unit, su.name AS sub_unit_name, uc.factor AS sub_unit_factor, p.image_data_url
+                p.image_data_url,
+                COALESCE(su.sub_units, '[]'::json) AS sub_units,
+                COALESCE(bt.batches,   '[]'::json) AS batches
          FROM products p
          JOIN units bu ON bu.code = p.base_unit
-         LEFT JOIN unit_conversions uc ON uc.base_unit = p.base_unit
-         LEFT JOIN units su ON su.code = uc.sub_unit
+         LEFT JOIN LATERAL (
+           SELECT json_agg(
+                    json_build_object('code', uc.sub_unit, 'name', u.name, 'factor', uc.factor)
+                    ORDER BY uc.factor ASC
+                  ) AS sub_units
+           FROM unit_conversions uc
+           JOIN units u ON u.code = uc.sub_unit
+           WHERE uc.base_unit = p.base_unit
+         ) su ON true
+         LEFT JOIN LATERAL (
+           SELECT json_agg(
+                    json_build_object('id', b.id, 'batchNumber', b.batch_number,
+                                      'quantityRemaining', b.quantity_remaining, 'expiryDate', b.expiry_date)
+                    ORDER BY b.received_date ASC, b.created_at ASC
+                  ) AS batches
+           FROM batches b
+           WHERE b.product_id = p.id AND b.quantity_remaining > 0
+         ) bt ON true
          WHERE p.is_active = true
          ORDER BY p.name`,
       ),
@@ -85,23 +104,36 @@ export default async function CheckoutPage() {
       ),
     ]);
 
-  const products: ProductForSale[] = productRows.map((row) => ({
-    id: row.id,
-    name: row.name,
-    sku: row.sku,
-    barcode: row.barcode,
-    categoryId: row.category_id,
-    baseUnit: row.base_unit,
-    baseUnitName: row.base_unit_name,
-    sellingPrice: Number(row.selling_price),
-    taxRate: Number(row.tax_rate),
-    discountType: row.discount_type,
-    discountValue: row.discount_value != null ? Number(row.discount_value) : null,
-    subUnit: row.sub_unit
-      ? { code: row.sub_unit, name: row.sub_unit_name ?? row.sub_unit, factor: Number(row.sub_unit_factor) }
-      : null,
-    imageDataUrl: row.image_data_url,
-  }));
+  const products: ProductForSale[] = productRows.map((row) => {
+    const subUnits = (row.sub_units ?? []).map((s) => ({
+      code: s.code,
+      name: s.name,
+      factor: Number(s.factor),
+    }));
+    const batches = (row.batches ?? []).map((b) => ({
+      id: b.id,
+      batchNumber: b.batchNumber,
+      quantityRemaining: Number(b.quantityRemaining),
+      expiryDate: b.expiryDate,
+    }));
+    return {
+      id: row.id,
+      name: row.name,
+      sku: row.sku,
+      barcode: row.barcode,
+      categoryId: row.category_id,
+      baseUnit: row.base_unit,
+      baseUnitName: row.base_unit_name,
+      sellingPrice: Number(row.selling_price),
+      taxRate: Number(row.tax_rate),
+      discountType: row.discount_type,
+      discountValue: row.discount_value != null ? Number(row.discount_value) : null,
+      subUnit: subUnits[0] ?? null,
+      subUnits,
+      batches,
+      imageDataUrl: row.image_data_url,
+    };
+  });
 
   const promotions: PromotionRule[] = promoRows.map((p) => ({
     id: p.id,

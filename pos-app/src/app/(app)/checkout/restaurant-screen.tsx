@@ -69,11 +69,14 @@ function newLineFromProduct(product: ProductForSale): CartLine {
     unitCode: product.baseUnit,
     unitName: product.baseUnitName,
     subUnit: product.subUnit,
+    subUnits: product.subUnits,
     quantity: 1,
     sellingPrice: product.sellingPrice,
     taxRate: product.taxRate,
     discountType: product.discountType,
     discountValue: product.discountValue,
+    batchId: null,
+    applyProductDiscount: true,
   };
 }
 

@@ -1,3 +1,16 @@
+export interface SubUnitOption {
+  code: string;
+  name: string;
+  factor: number;
+}
+
+export interface ProductBatch {
+  id: string;
+  batchNumber: string;
+  quantityRemaining: number;
+  expiryDate: string | null;
+}
+
 export interface ProductForSale {
   id: string;
   name: string;
@@ -10,7 +23,10 @@ export interface ProductForSale {
   taxRate: number;
   discountType: "percentage" | "flat" | null;
   discountValue: number | null;
-  subUnit: { code: string; name: string; factor: number } | null;
+  // subUnit kept for the restaurant screen's existing math (= subUnits[0] ?? null).
+  subUnit: SubUnitOption | null;
+  subUnits: SubUnitOption[];
+  batches: ProductBatch[];
   imageDataUrl: string | null;
 }
 
@@ -34,20 +50,25 @@ export interface CartLine {
   baseUnitName: string;
   unitCode: string;
   unitName: string;
-  subUnit: { code: string; name: string; factor: number } | null;
+  subUnit: SubUnitOption | null;
+  subUnits: SubUnitOption[];
   quantity: number;
   sellingPrice: number;
   taxRate: number;
   discountType: "percentage" | "flat" | null;
   discountValue: number | null;
+  // Explicit batch to draw stock from; null => automatic FIFO (oldest first).
+  batchId: string | null;
+  // false => don't apply the product's own discount to this line.
+  applyProductDiscount: boolean;
 }
 
 export function unitPriceFor(line: CartLine): number {
   if (line.unitCode === line.baseUnit) return line.sellingPrice;
-  if (line.subUnit && line.unitCode === line.subUnit.code) {
-    return line.sellingPrice / line.subUnit.factor;
-  }
-  return line.sellingPrice;
+  const sub =
+    line.subUnits.find((u) => u.code === line.unitCode) ??
+    (line.subUnit && line.subUnit.code === line.unitCode ? line.subUnit : null);
+  return sub ? line.sellingPrice / sub.factor : line.sellingPrice;
 }
 
 export function lineSubtotal(line: CartLine): number {
@@ -55,6 +76,7 @@ export function lineSubtotal(line: CartLine): number {
 }
 
 export function lineProductDiscount(line: CartLine): number {
+  if (!line.applyProductDiscount) return 0;
   if (!line.discountType || !line.discountValue) return 0;
   const subtotal = lineSubtotal(line);
   const raw =

@@ -50,12 +50,14 @@ const UNITS: { code: string; name: string; category: "count" | "weight" | "volum
   { code: "L", name: "Litre", category: "volume" },
   { code: "ml", name: "Millilitre", category: "volume" },
   { code: "m", name: "Metre", category: "length" },
+  { code: "cm", name: "Centimetre", category: "length" },
   { code: "mm", name: "Millimetre", category: "length" },
 ];
 
 const UNIT_CONVERSIONS: { base: string; sub: string; factor: number }[] = [
   { base: "kg", sub: "g", factor: 1000 },
   { base: "L", sub: "ml", factor: 1000 },
+  { base: "m", sub: "cm", factor: 100 },
   { base: "m", sub: "mm", factor: 1000 },
 ];
 
