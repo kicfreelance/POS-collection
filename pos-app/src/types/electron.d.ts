@@ -12,7 +12,8 @@ export interface PosBridge {
   isElectron: true;
   printerAPI: {
     listPrinters: () => Promise<PrinterInfo[]>;
-    printReceipt: (saleId: string) => Promise<PrintResult>;
+    printReceipt: (saleId: string, deviceName?: string | null) => Promise<PrintResult>;
+    printLabel: (productId: string, deviceName?: string | null) => Promise<PrintResult>;
     printKOT: (orderId: string, stationId: string | null) => Promise<PrintResult>;
   };
 }

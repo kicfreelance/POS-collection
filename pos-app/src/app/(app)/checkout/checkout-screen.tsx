@@ -30,6 +30,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { bestPromotionForLine, type PromotionRule } from "@/lib/promotions";
+import { PrinterPicker } from "@/components/printer-picker";
 import { checkCoupon, type ManualDiscountInput, type SaleResult } from "./actions";
 import { PayDialog } from "./pay-dialog";
 import { ManualDiscountDialog } from "./manual-discount-dialog";
@@ -76,6 +77,7 @@ export function CheckoutScreen({
   canApplyDiscount,
   taxInclusive,
   currencySymbol,
+  receiptAutoPrint,
   quickLinks,
 }: {
   products: ProductForSale[];
@@ -86,6 +88,7 @@ export function CheckoutScreen({
   canApplyDiscount: boolean;
   taxInclusive: boolean;
   currencySymbol: string;
+  receiptAutoPrint: boolean;
   quickLinks: QuickLinkFlags;
 }) {
   const [cart, setCart] = useState<CartLine[]>([]);
@@ -281,6 +284,12 @@ export function CheckoutScreen({
     setCustomerId(WALK_IN);
     setPayOpen(false);
     toast.success(`Sale ${result.saleNumber} completed`);
+
+    if (receiptAutoPrint && typeof window !== "undefined" && window.pos?.isElectron) {
+      window.pos.printerAPI.printReceipt(result.id).then((res) => {
+        if (!res.success) toast.error(`Receipt print failed: ${res.error ?? "unknown error"}`);
+      });
+    }
   }
 
   const cartLinesForPayment = cart.map((line) => ({
@@ -334,12 +343,20 @@ export function CheckoutScreen({
                 <p className="text-lg font-semibold">Sale {completedSale.saleNumber} complete</p>
                 <p className="text-sm text-muted-foreground">Total {completedSale.total.toFixed(2)}</p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <PrinterPicker
+                  label="Print receipt"
+                  storageKey="receipt"
+                  variant="outline"
+                  onPrint={(deviceName) =>
+                    window.pos!.printerAPI.printReceipt(completedSale.id, deviceName)
+                  }
+                />
                 <Button
                   variant="outline"
                   onClick={() => window.open(`/checkout/receipt/${completedSale.id}`, "_blank")}
                 >
-                  <Printer /> Receipt
+                  <Printer /> Preview
                 </Button>
                 <Button onClick={() => setCompletedSale(null)}>New Sale</Button>
               </div>

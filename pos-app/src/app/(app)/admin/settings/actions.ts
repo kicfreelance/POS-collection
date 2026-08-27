@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { pool } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth/rbac";
+import type { ReceiptFontSize, ReceiptPaperWidth, ReceiptTemplate } from "@/lib/receipt/types";
 
 async function requireSuperAdmin() {
   const user = await getCurrentUser();
@@ -29,6 +30,15 @@ export interface BusinessSettingsInput {
   businessType: "retail" | "restaurant";
   receiptPrinterName: string | null;
   kotPrinterName: string | null;
+  labelPrinterName: string | null;
+  receiptTemplate: ReceiptTemplate;
+  receiptPaperWidth: ReceiptPaperWidth;
+  receiptFontSize: ReceiptFontSize;
+  receiptShowLogo: boolean;
+  receiptShowTaxId: boolean;
+  receiptShowCashier: boolean;
+  receiptShowBarcode: boolean;
+  receiptAutoPrint: boolean;
 }
 
 export async function updateBusinessSettings(input: BusinessSettingsInput): Promise<void> {
@@ -40,7 +50,10 @@ export async function updateBusinessSettings(input: BusinessSettingsInput): Prom
        business_name=$1, logo_url=$2, address=$3, tax_id=$4, contact_phone=$5, contact_email=$6,
        tax_inclusive_pricing=$7, receipt_header=$8, receipt_footer=$9, currency_code=$10,
        currency_symbol=$11, locale=$12, costing_method=$13, business_type=$14,
-       receipt_printer_name=$15, kot_printer_name=$16, updated_at=now()
+       receipt_printer_name=$15, kot_printer_name=$16, label_printer_name=$17,
+       receipt_template=$18, receipt_paper_width=$19, receipt_font_size=$20,
+       receipt_show_logo=$21, receipt_show_tax_id=$22, receipt_show_cashier=$23,
+       receipt_show_barcode=$24, receipt_auto_print=$25, updated_at=now()
      WHERE id = true`,
     [
       input.businessName.trim(),
@@ -59,6 +72,15 @@ export async function updateBusinessSettings(input: BusinessSettingsInput): Prom
       input.businessType,
       input.receiptPrinterName || null,
       input.kotPrinterName || null,
+      input.labelPrinterName || null,
+      input.receiptTemplate,
+      input.receiptPaperWidth,
+      input.receiptFontSize,
+      input.receiptShowLogo,
+      input.receiptShowTaxId,
+      input.receiptShowCashier,
+      input.receiptShowBarcode,
+      input.receiptAutoPrint,
     ],
   );
 

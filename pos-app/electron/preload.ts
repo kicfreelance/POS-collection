@@ -4,7 +4,10 @@ contextBridge.exposeInMainWorld("pos", {
   isElectron: true,
   printerAPI: {
     listPrinters: () => ipcRenderer.invoke("printers:list"),
-    printReceipt: (saleId: string) => ipcRenderer.invoke("print:receipt", saleId),
+    printReceipt: (saleId: string, deviceName?: string | null) =>
+      ipcRenderer.invoke("print:receipt", saleId, deviceName ?? null),
+    printLabel: (productId: string, deviceName?: string | null) =>
+      ipcRenderer.invoke("print:label", productId, deviceName ?? null),
     printKOT: (orderId: string, stationId: string | null) => ipcRenderer.invoke("print:kot", orderId, stationId),
   },
 });

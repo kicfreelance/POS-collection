@@ -174,6 +174,7 @@ export default async function CheckoutPage() {
       canApplyDiscount={hasPermission(user, "discounts.apply")}
       taxInclusive={settings.taxInclusivePricing}
       currencySymbol={settings.currencySymbol}
+      receiptAutoPrint={settings.receiptAutoPrint}
       quickLinks={quickLinks}
     />
   );
