@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
@@ -47,6 +47,17 @@ export function GrnForm({
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [supplierId, setSupplierId] = useState("");
+
+  // base-ui <Select.Value> shows the raw value (a UUID here) unless the Root is
+  // given an items map — then it renders the matching label instead.
+  const supplierItems = useMemo(
+    () => suppliers.map((s) => ({ value: s.id, label: s.name })),
+    [suppliers],
+  );
+  const productItems = useMemo(
+    () => products.map((p) => ({ value: p.id, label: `${p.name} (${p.base_unit})` })),
+    [products],
+  );
   const [receivedDate, setReceivedDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState("");
   const [items, setItems] = useState<DraftItem[]>([]);
@@ -119,7 +130,11 @@ export function GrnForm({
         <CardContent className="grid gap-4 sm:grid-cols-2">
           <div className="grid gap-1.5">
             <Label>Supplier</Label>
-            <Select value={supplierId} onValueChange={(value) => setSupplierId(value ?? "")}>
+            <Select
+              items={supplierItems}
+              value={supplierId}
+              onValueChange={(value) => setSupplierId(value ?? "")}
+            >
               <SelectTrigger className="w-full">
                 <SelectValue placeholder="Select supplier" />
               </SelectTrigger>
@@ -167,6 +182,7 @@ export function GrnForm({
               <div className="grid gap-1 sm:col-span-2">
                 <Label className="text-xs">Product</Label>
                 <Select
+                  items={productItems}
                   value={item.productId}
                   onValueChange={(value) => updateItem(item.key, { productId: value ?? "" })}
                 >
