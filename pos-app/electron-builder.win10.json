@@ -1,0 +1,42 @@
+{
+  "appId": "com.possystem.desktop",
+  "productName": "POS",
+  "asar": false,
+  "directories": {
+    "output": "release/win10-11"
+  },
+  "files": [
+    "!src/**/*",
+    "!electron/**/*.ts",
+    "!electron/tsconfig.json",
+    "!.next/**/*",
+    "!.pgdata/**/*",
+    "!.env",
+    "!.env.example",
+    "!*.md",
+    "!electron-builder*.json",
+    "!tsconfig.json",
+    "!tsconfig.tsbuildinfo",
+    "!eslint.config.mjs",
+    "!postcss.config.mjs",
+    "!next.config.ts",
+    "!next-env.d.ts",
+    "!components.json",
+    "!release/**/*"
+  ],
+  "extraResources": [
+    { "from": ".next/standalone", "to": "standalone" },
+    { "from": ".next/standalone/node_modules", "to": "standalone/node_modules" },
+    { "from": ".next/static", "to": "standalone/.next/static" },
+    { "from": "public", "to": "standalone/public" }
+  ],
+  "win": {
+    "target": [{ "target": "nsis", "arch": ["x64"] }],
+    "requestedExecutionLevel": "asInvoker"
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "perMachine": false
+  }
+}

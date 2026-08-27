@@ -1,0 +1,2 @@
+ALTER TABLE products
+  ADD COLUMN IF NOT EXISTS station_id UUID REFERENCES kitchen_stations(id) ON DELETE SET NULL;

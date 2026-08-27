@@ -1,0 +1,171 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>POS Dual Screen Setup</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #1d1d1d;
+    color: #f2f2f2;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .card {
+    width: 480px;
+    background: #262626;
+    border: 1px solid #3a3a3a;
+    border-radius: 12px;
+    padding: 32px;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p.sub { color: #a3a3a3; font-size: 13px; margin: 0 0 24px; }
+  .choices { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+  .choice {
+    border: 1px solid #3a3a3a;
+    border-radius: 10px;
+    padding: 16px;
+    cursor: pointer;
+    background: #2e2e2e;
+    text-align: left;
+  }
+  .choice.selected { border-color: #2563eb; background: #1d2b4d; }
+  .choice h3 { margin: 0 0 6px; font-size: 15px; }
+  .choice p { margin: 0; font-size: 12px; color: #a3a3a3; }
+  .field { display: none; margin-bottom: 16px; }
+  .field.visible { display: block; }
+  label { display: block; font-size: 12px; color: #a3a3a3; margin-bottom: 6px; }
+  input {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid #3a3a3a;
+    background: #1d1d1d;
+    color: #f2f2f2;
+    font-size: 14px;
+  }
+  .row { display: flex; gap: 8px; }
+  .row input:first-child { flex: 2; }
+  .row input:last-child { flex: 1; }
+  button.primary {
+    width: 100%;
+    padding: 12px;
+    border-radius: 8px;
+    border: none;
+    background: #2563eb;
+    color: white;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: 4px;
+  }
+  button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.test {
+    width: 100%;
+    padding: 9px;
+    border-radius: 8px;
+    border: 1px solid #3a3a3a;
+    background: transparent;
+    color: #f2f2f2;
+    font-size: 13px;
+    cursor: pointer;
+    margin-bottom: 16px;
+  }
+  .status { font-size: 12px; margin-top: 8px; min-height: 16px; }
+  .status.ok { color: #34d399; }
+  .status.err { color: #f87171; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>Set up this PC</h1>
+    <p class="sub">POS Dual Screen — choose how this computer will be used.</p>
+
+    <div class="choices">
+      <div class="choice" id="choice-server">
+        <h3>Server</h3>
+        <p>Hosts the database and can also be used as a checkout terminal.</p>
+      </div>
+      <div class="choice" id="choice-terminal">
+        <h3>Terminal</h3>
+        <p>Connects to a Server PC on the network. No local database.</p>
+      </div>
+    </div>
+
+    <div class="field" id="server-field">
+      <label for="server-host">Server IP address</label>
+      <div class="row">
+        <input id="server-host" type="text" placeholder="e.g. 192.168.1.42" />
+        <input id="server-port" type="text" placeholder="3000" value="3000" />
+      </div>
+      <button class="test" id="test-btn">Test connection</button>
+      <div class="status" id="test-status"></div>
+    </div>
+
+    <button class="primary" id="continue-btn" disabled>Continue</button>
+  </div>
+
+  <script>
+    let role = null;
+    const choiceServer = document.getElementById("choice-server");
+    const choiceTerminal = document.getElementById("choice-terminal");
+    const serverField = document.getElementById("server-field");
+    const continueBtn = document.getElementById("continue-btn");
+    const testBtn = document.getElementById("test-btn");
+    const testStatus = document.getElementById("test-status");
+    const hostInput = document.getElementById("server-host");
+    const portInput = document.getElementById("server-port");
+
+    function selectRole(r) {
+      role = r;
+      choiceServer.classList.toggle("selected", r === "server");
+      choiceTerminal.classList.toggle("selected", r === "terminal");
+      serverField.classList.toggle("visible", r === "terminal");
+      updateContinueState();
+    }
+
+    function updateContinueState() {
+      if (role === "server") {
+        continueBtn.disabled = false;
+      } else if (role === "terminal") {
+        continueBtn.disabled = !hostInput.value.trim();
+      } else {
+        continueBtn.disabled = true;
+      }
+    }
+
+    choiceServer.addEventListener("click", () => selectRole("server"));
+    choiceTerminal.addEventListener("click", () => selectRole("terminal"));
+    hostInput.addEventListener("input", updateContinueState);
+
+    testBtn.addEventListener("click", async () => {
+      testStatus.className = "status";
+      testStatus.textContent = "Testing...";
+      const host = hostInput.value.trim();
+      const port = Number(portInput.value.trim() || "3000");
+      const result = await window.setup.testConnection(host, port);
+      if (result.ok) {
+        testStatus.className = "status ok";
+        testStatus.textContent = "Connected successfully.";
+      } else {
+        testStatus.className = "status err";
+        testStatus.textContent = "Could not connect: " + result.error;
+      }
+    });
+
+    continueBtn.addEventListener("click", async () => {
+      continueBtn.disabled = true;
+      continueBtn.textContent = "Starting...";
+      const config = role === "server"
+        ? { role: "server" }
+        : { role: "terminal", serverHost: hostInput.value.trim(), serverPort: Number(portInput.value.trim() || "3000") };
+      await window.setup.saveConfig(config);
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,43 @@
+# ---------------------------------------------------------------------------
+# Root safety-net ignores for the POS collection.
+# Each sub-project (pos-app/, POS-DUALSCREEN/, license-server/) also has its
+# own .gitignore; git honours all of them.
+# ---------------------------------------------------------------------------
+
+# dependencies
+node_modules/
+.pnp
+.pnp.*
+
+# build output
+.next/
+out/
+build/
+dist/
+dist-electron/
+release/
+
+# env — never commit real values; keep the *.example templates
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# local databases / runtime data
+.pgdata/
+*.tsbuildinfo
+next-env.d.ts
+
+# editor / OS
+.DS_Store
+*.pem
+*.log
+npm-debug.log*
+yarn-debug.log*
+.pnpm-debug.log*
+
+# tooling
+.vercel
+.claude/
+**/.terminal-test-userdata/
+**/.terminal-test*/
