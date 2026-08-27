@@ -1,13 +1,27 @@
 /**
- * license-client.ts — drop into pos-app AND POS-DUALSCREEN (Electron main process).
+ * license-client.ts — shared licence client for the Electron main process.
  *
- * Standalone POS (pos-app):            role = "standalone"
- * Dual-screen SERVER machine:          role = "server"
- * Dual-screen TERMINAL machines:       do NOT use this file — terminals never talk
- *                                      to the license server. See dualscreen-server-gate.ts.
+ * SOURCE OF TRUTH. Copies must stay byte-identical:
+ *   - pos-app/electron/license-client.ts
+ *   - POS-DUALSCREEN/electron/license-client.ts
  *
- * Only Node built-ins are used, so this works in an Electron main process with
- * no extra dependencies.
+ * ─────────────────────────────────────────────────────────────────────────────
+ * What this protects against (and what it can't) — see SECURITY.md:
+ *   • The client holds ONLY the Ed25519 PUBLIC key. It cannot mint or extend a
+ *     licence, so no keygen is possible and a spoofed licence server is rejected
+ *     by the signature check.
+ *   • Entitlement tokens are signed server-side, bound to a machine fingerprint,
+ *     product-scoped, and time-limited. Verified fully offline on every launch.
+ *   • The local cache is HMAC-tagged (keyed off the fingerprint), so it can't be
+ *     hand-edited or copied to another machine.
+ *   • A monotonic `seenTime` high-water mark defeats system-clock rollback.
+ *   • It does NOT stop someone editing the app's own JS to skip the call. That
+ *     needs patching every install and re-patching after every update; raise the
+ *     bar further with a native addon / V8 bytecode / asar integrity.
+ *
+ * Node built-ins only. Assumes a global `fetch` (Electron 44 / Node 20+); the
+ * legacy Win7 build (Electron 22) would need a fetch polyfill here and in
+ * electron/setup-ipc.ts alike.
  */
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -17,43 +31,85 @@ import { execSync } from "node:child_process";
 
 /* ------------------------------------------------------------------ config */
 
-/** Paste the PUBLIC key printed by `npm run keypair` on the license server. */
-export const LICENSE_PUBLIC_KEY_B64 = "REPLACE_WITH_LICENSE_SIGNING_PUBLIC_KEY";
+/** PUBLIC signing key of the licence server (base64 SPKI DER). */
+export const LICENSE_PUBLIC_KEY_B64 =
+  "MCowBQYDK2VwAyEA3Y64WyCAm3y0dW+1H/XoUTMUqvgfb4fXuow9T5lCZBY=";
 
-/** Base URL of the deployed license server, e.g. https://license.yourdomain.com */
-export const LICENSE_SERVER_URL = "https://your-license-server.up.railway.app";
+/** Base URL of the deployed licence server. */
+export const LICENSE_SERVER_URL =
+  "https://license-server-app-production.up.railway.app";
 
-/** Days past token expiry the app still runs (offline grace) before it blocks. */
 const OFFLINE_GRACE_DAYS = 5;
+const CLOCK_SKEW_SEC = 24 * 3600; // tolerated backward clock drift before we distrust it
+const HTTP_TIMEOUT_MS = 8000;
 
 /* -------------------------------------------------------------- fingerprint */
 
 /**
- * Stable per-machine id. Mixes a hardware-rooted value (so copying %APPDATA%
- * to another PC does NOT carry the identity) with host/platform.
+ * Stable per-machine id. Uses the OS install GUID only — survives NIC / MAC /
+ * RAM / disk / GPU changes. It changes on an OS reinstall or a different PC,
+ * which is exactly what the transfer flow is for.
+ *
+ * `fallbackIdFile` (pass `<userData>/license/machine-id`) is consulted only when
+ * the OS GUID can't be read, so those machines still get a stable, unique id
+ * instead of all hashing to the same value.
  */
-export function machineFingerprint(): string {
+export function machineFingerprint(fallbackIdFile?: string): string {
   let hwId = "";
   try {
     if (process.platform === "win32") {
       const out = execSync(
         'reg query "HKLM\\SOFTWARE\\Microsoft\\Cryptography" /v MachineGuid',
-        { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+        { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], windowsHide: true },
       );
-      hwId = out.trim().split(/\s+/).pop() ?? "";
+      hwId = out.match(/MachineGuid\s+REG_SZ\s+\{?([0-9a-fA-F-]{36})\}?/)?.[1] ?? "";
     } else if (process.platform === "darwin") {
       hwId =
         execSync("ioreg -rd1 -c IOPlatformExpertDevice", { encoding: "utf8" }).match(
           /IOPlatformUUID"\s*=\s*"([^"]+)"/,
         )?.[1] ?? "";
     } else {
-      hwId = fs.readFileSync("/etc/machine-id", "utf8").trim();
+      for (const p of ["/etc/machine-id", "/var/lib/dbus/machine-id"]) {
+        try {
+          const v = fs.readFileSync(p, "utf8").trim();
+          if (v) {
+            hwId = v;
+            break;
+          }
+        } catch {
+          /* try next */
+        }
+      }
     }
   } catch {
-    /* fall through to host-only basis */
+    /* handled below */
   }
-  const basis = [hwId, os.hostname(), os.platform(), os.arch()].join("|");
-  return crypto.createHash("sha256").update(basis).digest("hex");
+
+  if (!hwId && fallbackIdFile) hwId = readOrCreateRandomId(fallbackIdFile);
+  if (!hwId) hwId = `weak|${os.hostname()}|${os.platform()}|${os.arch()}|${os.totalmem()}`;
+
+  return crypto.createHash("sha256").update(`posfp1|${hwId.toLowerCase()}`).digest("hex");
+}
+
+function readOrCreateRandomId(file: string): string {
+  try {
+    const v = fs.readFileSync(file, "utf8").trim();
+    if (v) return v;
+  } catch {
+    /* create below */
+  }
+  const id = crypto.randomUUID();
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, id, { flag: "wx" });
+    return id;
+  } catch {
+    try {
+      return fs.readFileSync(file, "utf8").trim() || id;
+    } catch {
+      return id;
+    }
+  }
 }
 
 /* ----------------------------------------------------------- token verify */
@@ -72,7 +128,10 @@ export interface Entitlement {
   expiresAt: number;
 }
 
-export function verifyToken(token: string, publicKeyB64 = LICENSE_PUBLIC_KEY_B64): Entitlement | null {
+export function verifyToken(
+  token: string,
+  publicKeyB64 = LICENSE_PUBLIC_KEY_B64,
+): Entitlement | null {
   try {
     const [body, sig] = token.split(".");
     if (!body || !sig) return null;
@@ -81,45 +140,137 @@ export function verifyToken(token: string, publicKeyB64 = LICENSE_PUBLIC_KEY_B64
       format: "der",
       type: "spki",
     });
-    const ok = crypto.verify(null, Buffer.from(body), pub, Buffer.from(sig, "base64url"));
-    if (!ok) return null;
-    return JSON.parse(Buffer.from(body, "base64url").toString()) as Entitlement;
+    if (!crypto.verify(null, Buffer.from(body), pub, Buffer.from(sig, "base64url"))) {
+      return null;
+    }
+    const e = JSON.parse(Buffer.from(body, "base64url").toString()) as Entitlement;
+    return e && e.v === 1 ? e : null;
   } catch {
     return null;
   }
 }
+
+/* ------------------------------------------------- cache (tamper-evident) */
+
+export interface LicenseCache {
+  token: string;
+  key: string; // licence key, so heartbeat / release work without re-prompting
+  expiresAt: number; // unix seconds, from the token
+  seenTime: number; // unix seconds: highest time ever trusted (anti clock-rollback)
+  savedAt: number; // ms
+}
+
+function cacheMacKey(fingerprint: string): Buffer {
+  // Not a true secret (the fingerprint is derivable) — its job is to force an
+  // attacker to reproduce the real fingerprint logic AND this construction
+  // rather than just dropping a JSON file in place. The real barrier is the
+  // Ed25519 signature on the token itself.
+  return crypto.createHash("sha256").update(`poscache1|${fingerprint}`).digest();
+}
+
+function stableStringify(o: Record<string, unknown>): string {
+  return JSON.stringify(o, Object.keys(o).sort());
+}
+
+export function loadCache(file: string, fingerprint: string): LicenseCache | null {
+  try {
+    const raw = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown> & {
+      mac?: string;
+    };
+    const mac = String(raw.mac ?? "");
+    delete raw.mac;
+    const expect = crypto
+      .createHmac("sha256", cacheMacKey(fingerprint))
+      .update(stableStringify(raw))
+      .digest("hex");
+    if (
+      mac.length !== expect.length ||
+      !crypto.timingSafeEqual(Buffer.from(mac), Buffer.from(expect))
+    ) {
+      return null;
+    }
+    return raw as unknown as LicenseCache;
+  } catch {
+    return null;
+  }
+}
+
+export function saveCache(
+  file: string,
+  fingerprint: string,
+  c: Omit<LicenseCache, "savedAt">,
+): void {
+  const body: LicenseCache = { ...c, savedAt: Date.now() };
+  const mac = crypto
+    .createHmac("sha256", cacheMacKey(fingerprint))
+    .update(stableStringify(body as unknown as Record<string, unknown>))
+    .digest("hex");
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ ...body, mac }));
+}
+
+export function clearCache(file: string): void {
+  try {
+    fs.rmSync(file, { force: true });
+  } catch {
+    /* ignore */
+  }
+}
+
+/* ------------------------------------------------------------- evaluate */
 
 export type LicenseState = "ok" | "grace" | "invalid";
 
+export interface Evaluation {
+  state: LicenseState;
+  entitlement: Entitlement | null;
+  reason?: string;
+}
+
 export function evaluate(
-  token: string | null,
+  cache: LicenseCache | null,
   fingerprint: string,
-  graceDays = OFFLINE_GRACE_DAYS,
-): { state: LicenseState; entitlement: Entitlement | null } {
-  const e = token ? verifyToken(token) : null;
-  if (!e) return { state: "invalid", entitlement: null };
-  if (e.status !== "active") return { state: "invalid", entitlement: e };
-  if (e.fingerprint !== fingerprint) return { state: "invalid", entitlement: e };
+  opts: { graceDays?: number; product?: Entitlement["product"] } = {},
+): Evaluation {
+  const graceDays = opts.graceDays ?? OFFLINE_GRACE_DAYS;
+  if (!cache) return { state: "invalid", entitlement: null, reason: "no_license" };
 
-  const now = Date.now() / 1000;
-  if (now <= e.expiresAt) return { state: "ok", entitlement: e };
-  if (now <= e.expiresAt + graceDays * 86_400) return { state: "grace", entitlement: e };
-  return { state: "invalid", entitlement: e };
-}
-
-/* ---------------------------------------------------------- token cache */
-
-export function loadCachedToken(file: string): string | null {
-  try {
-    return (JSON.parse(fs.readFileSync(file, "utf8")) as { token?: string }).token ?? null;
-  } catch {
-    return null;
+  const e = verifyToken(cache.token);
+  if (!e) return { state: "invalid", entitlement: null, reason: "bad_signature" };
+  if (e.status !== "active") return { state: "invalid", entitlement: e, reason: e.status };
+  if (e.fingerprint !== fingerprint) {
+    return { state: "invalid", entitlement: e, reason: "wrong_machine" };
   }
+  if (opts.product && e.product !== opts.product) {
+    return { state: "invalid", entitlement: e, reason: "wrong_product" };
+  }
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  const rolledBack = cache.seenTime - nowSec > CLOCK_SKEW_SEC;
+  const effectiveNow = Math.max(nowSec, cache.seenTime);
+
+  if (effectiveNow <= e.expiresAt) {
+    return rolledBack
+      ? { state: "grace", entitlement: e, reason: "clock_rollback" }
+      : { state: "ok", entitlement: e };
+  }
+  if (effectiveNow <= e.expiresAt + graceDays * 86_400) {
+    return {
+      state: "grace",
+      entitlement: e,
+      reason: rolledBack ? "clock_rollback" : "expired_offline",
+    };
+  }
+  return { state: "invalid", entitlement: e, reason: "expired_offline" };
 }
 
-export function saveCachedToken(file: string, token: string, expiresAt: number): void {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify({ token, expiresAt, savedAt: Date.now() }));
+/** Fold freshly trusted timestamps into the monotonic high-water mark. */
+export function bumpSeenTime(cache: LicenseCache, ...times: number[]): number {
+  return Math.max(
+    cache.seenTime,
+    Math.floor(Date.now() / 1000),
+    ...times.filter((t) => Number.isFinite(t)),
+  );
 }
 
 /* --------------------------------------------------------- server calls */
@@ -136,59 +287,155 @@ interface ActivateResult {
   };
 }
 
-class LicenseError extends Error {
+export class LicenseError extends Error {
   code: string;
   status: number;
-  data: unknown;
+  data: any;
   constructor(code: string, status: number, data: unknown) {
     super(code);
+    this.name = "LicenseError";
     this.code = code;
     this.status = status;
     this.data = data;
   }
 }
 
+const HARD_REJECTIONS = new Set([
+  "revoked",
+  "suspended",
+  "expired",
+  "activation_revoked",
+  "not_activated",
+  "invalid_key",
+  "product_mismatch",
+]);
+
 async function post(pathname: string, payload: unknown): Promise<any> {
-  const res = await fetch(`${LICENSE_SERVER_URL.replace(/\/$/, "")}${pathname}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || data?.valid === false) {
-    throw new LicenseError(data?.error ?? "request_failed", res.status, data);
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), HTTP_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${LICENSE_SERVER_URL.replace(/\/$/, "")}${pathname}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: ctl.signal,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data?.valid === false) {
+      throw new LicenseError(data?.error ?? `http_${res.status}`, res.status, data);
+    }
+    return data;
+  } catch (err) {
+    if (err instanceof LicenseError) throw err;
+    throw new LicenseError("network_error", 0, { message: String(err) });
+  } finally {
+    clearTimeout(timer);
   }
-  return data;
 }
 
-export function activate(
-  key: string,
-  opts: {
-    fingerprint: string;
-    role?: "standalone" | "server";
-    hostname?: string;
-    appVersion?: string;
-    transfer?: boolean;
-  },
-): Promise<ActivateResult> {
-  return post("/api/v1/activate", { key, ...opts });
+export interface ActivateCtx {
+  fingerprint: string;
+  role: "standalone" | "server";
+  hostname?: string;
+  appVersion?: string;
 }
 
-export function heartbeat(
+/**
+ * Activate, transparently handling "licence bound to another machine": calls
+ * `confirmTransfer` (show a dialog); if the user accepts and transfers remain,
+ * retries with transfer:true. On success the (verified) token is cached.
+ */
+export async function activateAndCache(
+  file: string,
   key: string,
-  opts: {
-    fingerprint: string;
+  ctx: ActivateCtx,
+  confirmTransfer: (info: { boundAt?: string; transfersLeft?: number }) => Promise<boolean>,
+): Promise<Evaluation> {
+  key = key.trim().toUpperCase();
+  let res: ActivateResult;
+  try {
+    res = await post("/api/v1/activate", { key, ...ctx });
+  } catch (e) {
+    if (e instanceof LicenseError && e.code === "already_activated_elsewhere") {
+      const info = (e.data ?? {}) as { boundAt?: string; transfersLeft?: number };
+      if (typeof info.transfersLeft === "number" && info.transfersLeft <= 0) throw e;
+      if (!(await confirmTransfer(info))) throw e;
+      res = await post("/api/v1/activate", { key, ...ctx, transfer: true });
+    } else {
+      throw e;
+    }
+  }
+
+  const ent = verifyToken(res.token);
+  if (!ent || ent.fingerprint !== ctx.fingerprint) {
+    throw new LicenseError("token_verify_failed", 0, {});
+  }
+  saveCache(file, ctx.fingerprint, {
+    token: res.token,
+    key,
+    expiresAt: res.expiresAt,
+    seenTime: Math.max(Math.floor(Date.now() / 1000), ent.issuedAt),
+  });
+  return evaluate(loadCache(file, ctx.fingerprint), ctx.fingerprint, { product: ent.product });
+}
+
+/**
+ * Periodic revalidation. Refreshes the cached token, advances `seenTime`, and
+ * returns the new state. A hard rejection (revoked / expired / suspended)
+ * clears the cache so the next launch is blocked. Network errors are swallowed
+ * — the app keeps running on the cached token until it ages past grace.
+ */
+export async function heartbeatAndCache(
+  file: string,
+  ctx: ActivateCtx & {
     activeTerminals?: number;
     terminals?: Array<{ machineId: string; hostname?: string; lastSeen?: number }>;
-    appVersion?: string;
-    hostname?: string;
   },
-): Promise<{ token: string; expiresAt: number; seatLimit: number; warning?: string }> {
-  return post("/api/v1/heartbeat", { key, ...opts });
+): Promise<Evaluation> {
+  const cache = loadCache(file, ctx.fingerprint);
+  if (!cache) return { state: "invalid", entitlement: null, reason: "no_license" };
+
+  try {
+    const res = await post("/api/v1/heartbeat", {
+      key: cache.key,
+      fingerprint: ctx.fingerprint,
+      appVersion: ctx.appVersion,
+      hostname: ctx.hostname,
+      activeTerminals: ctx.activeTerminals,
+      terminals: ctx.terminals,
+    });
+    const ent = verifyToken(res.token);
+    if (ent && ent.fingerprint === ctx.fingerprint) {
+      saveCache(file, ctx.fingerprint, {
+        token: res.token,
+        key: cache.key,
+        expiresAt: res.expiresAt,
+        seenTime: bumpSeenTime(cache, ent.issuedAt),
+      });
+    }
+  } catch (e) {
+    if (e instanceof LicenseError && HARD_REJECTIONS.has(e.code)) {
+      clearCache(file);
+      return { state: "invalid", entitlement: null, reason: e.code };
+    }
+    // Network error: keep the token, but still advance seenTime so the clock
+    // can't be wound back between heartbeats.
+    saveCache(file, ctx.fingerprint, {
+      token: cache.token,
+      key: cache.key,
+      expiresAt: cache.expiresAt,
+      seenTime: bumpSeenTime(cache),
+    });
+  }
+  return evaluate(loadCache(file, ctx.fingerprint), ctx.fingerprint);
 }
 
-export function deactivate(key: string, fingerprint: string): Promise<{ ok: true }> {
-  return post("/api/v1/deactivate", { key, fingerprint });
+/** "Move licence to another PC": free the seat + binding server-side, wipe local cache. */
+export async function releaseLicense(file: string, fingerprint: string): Promise<void> {
+  const cache = loadCache(file, fingerprint);
+  try {
+    if (cache) await post("/api/v1/deactivate", { key: cache.key, fingerprint });
+  } finally {
+    clearCache(file);
+  }
 }
-
-export { LicenseError };

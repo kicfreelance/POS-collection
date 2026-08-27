@@ -1,76 +1,45 @@
 # client-example
 
-Reference code to copy into the **desktop apps** (Electron main process). Not part of
-the license-server build. These are separate codebases — adapt paths/imports to each.
+`license-client.ts` here is the **source of truth**. Byte-identical copies live at:
 
-## Files
+- `pos-app/electron/license-client.ts`
+- `POS-DUALSCREEN/electron/license-client.ts`
 
-| File | Goes into | Role |
-|---|---|---|
-| `license-client.ts` | `pos-app` **and** `POS-DUALSCREEN` (Server role) | fingerprint, offline token verify, `activate` / `heartbeat` / `deactivate` |
-| `dualscreen-server-gate.ts` | `POS-DUALSCREEN` (Server role only) | Terminal seat registry + whole-app gate sketch |
+Both apps are already wired up — this folder is just where the shared module and
+the dual-screen server-gate sketch are kept under version control. When you edit
+`license-client.ts`, copy it to both `electron/` dirs (they must match).
 
-Before shipping, in `license-client.ts` set:
+## How it's wired (real code, not pseudo)
 
-- `LICENSE_PUBLIC_KEY_B64` — the public key from `npm run keypair` on the server.
-- `LICENSE_SERVER_URL` — your deployed Railway URL.
+**pos-app** (`role: "standalone"`, `product: "pos-standard"`):
+- `electron/license-gate.ts` — `ensureLicensed()` blocks `main.ts` startup before
+  Postgres/server start; opens `electron/license.html` if unlicensed;
+  `startHeartbeat()` revalidates every 12 h and quits on a hard rejection.
+- `electron/license.html` — key entry + "Move licence to another PC" (calls
+  `releaseLicense`).
 
-## pos-app (standalone) flow
+**POS-DUALSCREEN** (`role: "server"`, `product: "pos-dualscreen"`):
+- `electron/license-gate.ts` — same, but only runs for the **server** role
+  (inside `startAsServer()`). `startHeartbeat(getActiveTerminals)` reports live
+  seat usage upstream.
+- `electron/terminal-register.ts` + `electron/terminal-id.ts` — **terminal** role
+  posts its `machineId` to the Server's `POST /api/terminal/register` every 60 s;
+  quits on HTTP 403 (seat limit / server unlicensed).
+- `dualscreen-server-gate.ts` (this folder) — the in-Next seat registry + the
+  `middleware.ts` gate. **Still to add** to the POS-DUALSCREEN Next app:
+  `src/lib/terminal-registry.ts`, `src/app/api/terminal/register/route.ts`,
+  `src/middleware.ts` licence gate, and a `/license-blocked` page. These need the
+  Next 16 bundled docs check first.
 
-```ts
-import { app } from "electron";
-import path from "node:path";
-import {
-  machineFingerprint, evaluate, loadCachedToken, saveCachedToken,
-  activate, heartbeat, LicenseError,
-} from "./license-client";
+## Module API (`license-client.ts`)
 
-const fp = machineFingerprint();
-const tokenFile = path.join(app.getPath("userData"), "license", "token.json");
+| Function | Use |
+|---|---|
+| `machineFingerprint(fallbackIdFile?)` | stable machine id — OS install GUID only (survives NIC/MAC/RAM/disk changes) |
+| `evaluate(cache, fp, {product})` | `ok` \| `grace` \| `invalid` + `reason`, offline, clock-rollback aware |
+| `activateAndCache(file, key, ctx, confirmTransfer)` | activate; auto-prompts for machine transfer via the callback; caches on success |
+| `heartbeatAndCache(file, ctx)` | periodic revalidation; clears cache on hard rejection; ignores network errors |
+| `releaseLicense(file, fp)` | "move to another PC" — deactivates server-side + wipes local cache |
+| `loadCache` / `saveCache` / `clearCache` | HMAC-tagged, fingerprint-bound token cache |
 
-// on boot: verify the cached token offline first — no network needed if fresh
-let { state } = evaluate(loadCachedToken(tokenFile), fp);
-
-// no valid token yet -> ask the user for a key, then:
-async function enterKey(key: string) {
-  try {
-    const r = await activate(key, {
-      fingerprint: fp, role: "standalone",
-      hostname: require("node:os").hostname(), appVersion: app.getVersion(),
-    });
-    saveCachedToken(tokenFile, r.token, r.expiresAt);
-  } catch (e) {
-    if (e instanceof LicenseError && e.code === "already_activated_elsewhere") {
-      // offer "move license to this PC" -> call activate(key, { ..., transfer: true })
-    }
-    throw e;
-  }
-}
-
-// background, every ~12h and on network regain:
-async function refresh(key: string) {
-  try {
-    const r = await heartbeat(key, { fingerprint: fp, appVersion: app.getVersion() });
-    saveCachedToken(tokenFile, r.token, r.expiresAt);
-  } catch (e) {
-    if (e instanceof LicenseError && [403].includes(e.status)) {
-      // license revoked/expired server-side -> block the app now
-    }
-    // network error -> keep running on the cached token until it ages out
-  }
-}
-```
-
-`state` meaning: `ok` → run normally · `grace` → run + show "license needs to reconnect"
-banner · `invalid` → block, require a key.
-
-## POS-DUALSCREEN flow
-
-- **Server role**: same as above but `role: "server"`, and each heartbeat also sends the
-  live Terminal list from `dualscreen-server-gate.ts` (`activeTerminals()`).
-- **Terminal role**: no license client at all. Add a `machineId` (uuid, once) to the
-  existing `%APPDATA%\pos-dualscreen\node-config.json`, POST it to the Server's
-  `POST /api/terminal/register` on launch + every 60 s, and show a "seats full" screen
-  on a 403 instead of loading `http://<serverHost>:<serverPort>`.
-- Add the middleware gate from `dualscreen-server-gate.ts` to the Server's
-  `src/middleware.ts` so an invalid Server license blanks every screen at once.
+See `../SECURITY.md` for the threat model.

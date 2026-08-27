@@ -14,3 +14,12 @@ contextBridge.exposeInMainWorld("setup", {
   saveConfig: (config: { role: "server" } | { role: "terminal"; serverHost: string; serverPort: number }) =>
     ipcRenderer.invoke("setup:save", config),
 });
+
+// Bridge used only by the licence key-entry window (electron/license.html).
+contextBridge.exposeInMainWorld("license", {
+  getState: () => ipcRenderer.invoke("license:get-state"),
+  activate: (key: string) => ipcRenderer.invoke("license:activate", key),
+  release: () => ipcRenderer.invoke("license:release"),
+  continue: () => ipcRenderer.send("license:continue"),
+  quit: () => ipcRenderer.send("license:quit"),
+});

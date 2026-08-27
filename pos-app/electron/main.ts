@@ -10,6 +10,7 @@ import { runMigrations } from "../db/migrate";
 import { seedDatabase } from "../db/seed";
 import { applyProductionEnv, startProductionServer, stopProductionServer } from "./production-env";
 import { registerPrintingHandlers } from "./printing";
+import { ensureLicensed, startHeartbeat } from "./license-gate";
 
 let isQuitting = false;
 
@@ -35,6 +36,9 @@ app.whenReady().then(async () => {
       applyProductionEnv();
     }
 
+    // Gate startup on a valid licence before any DB / server work.
+    await ensureLicensed();
+
     await startEmbeddedPostgres();
     await runMigrations(path.join(app.getAppPath(), "db", "migrations"));
     await seedDatabase();
@@ -45,6 +49,7 @@ app.whenReady().then(async () => {
 
     await createWindow(url);
     registerPrintingHandlers(() => url);
+    startHeartbeat();
 
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) {

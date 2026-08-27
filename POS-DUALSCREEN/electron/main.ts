@@ -12,6 +12,8 @@ import { applyProductionEnv, startProductionServer, stopProductionServer } from 
 import { registerPrintingHandlers } from "./printing";
 import { loadNodeConfig } from "./node-config";
 import { registerSetupHandlers } from "./setup-ipc";
+import { ensureLicensed, startHeartbeat } from "./license-gate";
+import { startTerminalRegistration } from "./terminal-register";
 
 let isQuitting = false;
 
@@ -48,6 +50,10 @@ async function createSetupWindow(): Promise<void> {
 }
 
 async function startAsServer(): Promise<string> {
+  // The licence lives on the Server machine. Gate before any DB / server work;
+  // an invalid Server licence keeps every Terminal dark too (they load this app).
+  await ensureLicensed();
+
   if (app.isPackaged) {
     applyProductionEnv();
   }
@@ -77,6 +83,12 @@ app.whenReady().then(async () => {
 
     await createWindow(url);
     registerPrintingHandlers(() => url);
+
+    if (config.role === "server") {
+      startHeartbeat();
+    } else {
+      startTerminalRegistration(config.serverHost ?? "127.0.0.1", config.serverPort ?? 3000);
+    }
 
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) {
