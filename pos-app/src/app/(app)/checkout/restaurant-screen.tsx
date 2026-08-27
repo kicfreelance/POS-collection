@@ -293,7 +293,7 @@ export function RestaurantScreen({
               onClick={() => setView("orders")}
               className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${view === "orders" ? "bg-background shadow-sm" : "text-muted-foreground"}`}
             >
-              <ClipboardList className="size-4" />
+              <ClipboardList className="size-5" />
               Open Orders
               {openOrders.length > 0 && <Badge variant="secondary">{openOrders.length}</Badge>}
             </button>
@@ -394,13 +394,13 @@ export function RestaurantScreen({
                             onClick={() => removeLine(line.key)}
                             className="text-muted-foreground hover:text-destructive"
                           >
-                            <Trash2 className="size-4" />
+                            <Trash2 className="size-5" />
                           </Button>
                         </div>
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1.5">
                             <Button variant="outline" size="icon-xs" onClick={() => updateQuantity(line.key, line.quantity - 1)}>
-                              <Minus className="size-3.5" />
+                              <Minus className="size-4" />
                             </Button>
                             <Input
                               type="number"
@@ -411,7 +411,7 @@ export function RestaurantScreen({
                               className="h-7 w-16 text-center text-sm"
                             />
                             <Button variant="outline" size="icon-xs" onClick={() => updateQuantity(line.key, line.quantity + 1)}>
-                              <Plus className="size-3.5" />
+                              <Plus className="size-4" />
                             </Button>
                           </div>
                           <span className="text-sm font-semibold">{lineTotal(line, taxInclusive).toFixed(2)}</span>
@@ -478,7 +478,7 @@ export function RestaurantScreen({
                       </div>
                       <div className="flex items-center justify-between text-xs text-muted-foreground">
                         <span className="flex items-center gap-1">
-                          <Clock className="size-3.5" /> {timeSince(order.createdAt)}
+                          <Clock className="size-4" /> {timeSince(order.createdAt)}
                         </span>
                         <span className="text-sm font-semibold text-foreground">
                           {currencySymbol}
@@ -488,14 +488,14 @@ export function RestaurantScreen({
                       <div className="flex gap-1.5">
                         {order.status === "open" && (
                           <Button size="sm" variant="outline" className="flex-1" onClick={() => handleMarkServed(order.id)}>
-                            <CheckCheck className="size-4" /> Served
+                            <CheckCheck className="size-5" /> Served
                           </Button>
                         )}
                         <Button size="sm" className="flex-1" onClick={() => setPayingOrderId(order.id)}>
                           Complete &amp; Pay
                         </Button>
                         <Button size="icon-sm" variant="ghost" className="text-muted-foreground hover:text-destructive" onClick={() => handleVoid(order.id)}>
-                          <Ban className="size-4" />
+                          <Ban className="size-5" />
                         </Button>
                       </div>
                     </CardContent>

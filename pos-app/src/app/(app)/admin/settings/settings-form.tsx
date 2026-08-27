@@ -612,7 +612,7 @@ export function SettingsForm({ settings }: { settings: BusinessSettings }) {
                 <div className="sm:col-span-2">
                   {!printersLoaded ? (
                     <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <Printer className="size-4" /> Loading printers installed on this computer...
+                      <Printer className="size-5" /> Loading printers installed on this computer...
                     </p>
                   ) : printers.length === 0 ? (
                     <p className="text-xs text-muted-foreground">

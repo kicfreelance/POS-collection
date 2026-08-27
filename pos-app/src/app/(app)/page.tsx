@@ -262,7 +262,7 @@ export default async function DashboardPage() {
         <Card className="border-l-4 border-l-blue-500">
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-1.5">
-              <Receipt className="size-4 text-blue-500 dark:text-blue-400" /> Today&apos;s Sales
+              <Receipt className="size-5Receipttext-blue-500 dark:text-blue-400" /> Today&apos;s Sales
             </CardDescription>
             <CardTitle className="text-2xl">
               {settings.currencySymbol}
@@ -277,7 +277,7 @@ export default async function DashboardPage() {
         <Card className="border-l-4 border-l-emerald-500">
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-1.5">
-              <Wallet className="size-4 text-emerald-500 dark:text-emerald-400" /> Shift Status
+              <Wallet className="size-5Wallettext-emerald-500 dark:text-emerald-400" /> Shift Status
             </CardDescription>
             <CardTitle className="text-2xl">{openShift ? "Open" : "Not started"}</CardTitle>
           </CardHeader>
@@ -292,7 +292,7 @@ export default async function DashboardPage() {
           <Card className="border-l-4 border-l-amber-500">
             <CardHeader className="pb-2">
               <CardDescription className="flex items-center gap-1.5">
-                <AlertTriangle className="size-4 text-amber-500 dark:text-amber-400" /> Low Stock
+                <AlertTriangle className="size-5AlertTriangletext-amber-500 dark:text-amber-400" /> Low Stock
               </CardDescription>
               <CardTitle className="text-2xl">{lowStockCount}</CardTitle>
             </CardHeader>
@@ -307,7 +307,7 @@ export default async function DashboardPage() {
             <Card className="border-l-4 border-l-violet-500">
               <CardHeader className="pb-2">
                 <CardDescription className="flex items-center gap-1.5">
-                  <UtensilsCrossed className="size-4 text-violet-500 dark:text-violet-400" /> Open Orders
+                  <UtensilsCrossed className="size-5UtensilsCrossedtext-violet-500 dark:text-violet-400" /> Open Orders
                 </CardDescription>
                 <CardTitle className="text-2xl">{restaurantStats.openOrders}</CardTitle>
               </CardHeader>
@@ -316,7 +316,7 @@ export default async function DashboardPage() {
             <Card className="border-l-4 border-l-cyan-500">
               <CardHeader className="pb-2">
                 <CardDescription className="flex items-center gap-1.5">
-                  <Table2 className="size-4 text-cyan-500 dark:text-cyan-400" /> Occupied Tables
+                  <Table2 className="size-5Table2text-cyan-500 dark:text-cyan-400" /> Occupied Tables
                 </CardDescription>
                 <CardTitle className="text-2xl">{restaurantStats.occupiedTables}</CardTitle>
               </CardHeader>

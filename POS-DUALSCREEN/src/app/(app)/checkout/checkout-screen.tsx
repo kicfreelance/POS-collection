@@ -383,7 +383,7 @@ export function CheckoutScreen({
                         onClick={() => removeLine(line.key)}
                         className="text-muted-foreground hover:text-destructive"
                       >
-                        <Trash2 className="size-4" />
+                        <Trash2 className="size-5" />
                       </Button>
                     </div>
                     <div className="flex items-center justify-between">
@@ -393,7 +393,7 @@ export function CheckoutScreen({
                           size="icon-xs"
                           onClick={() => updateQuantity(line.key, line.quantity - (line.baseUnit === "pcs" ? 1 : 0.1))}
                         >
-                          <Minus className="size-3.5" />
+                          <Minus className="size-4" />
                         </Button>
                         <Input
                           type="number"
@@ -408,7 +408,7 @@ export function CheckoutScreen({
                           size="icon-xs"
                           onClick={() => updateQuantity(line.key, line.quantity + (line.baseUnit === "pcs" ? 1 : 0.1))}
                         >
-                          <Plus className="size-3.5" />
+                          <Plus className="size-4" />
                         </Button>
                         {line.subUnit && (
                           <button
@@ -434,7 +434,7 @@ export function CheckoutScreen({
                     )}
                     {promo && (
                       <p className="mt-0.5 flex items-center gap-1 text-xs text-primary">
-                        <Tag className="size-3.5" /> {promo.promotionName} -{promo.discountAmount.toFixed(2)}
+                        <Tag className="size-4" /> {promo.promotionName} -{promo.discountAmount.toFixed(2)}
                       </p>
                     )}
                   </div>
@@ -462,7 +462,7 @@ export function CheckoutScreen({
                     className="h-8 text-sm"
                   />
                   <Button size="sm" variant="outline" disabled={couponChecking} onClick={applyCoupon}>
-                    <Ticket className="size-4" />
+                    <Ticket className="size-5" />
                   </Button>
                 </div>
               ) : (
