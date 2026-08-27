@@ -7,10 +7,13 @@ import { BarcodeLabel } from "./barcode-label";
 
 export default async function ProductLabelPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ print?: string }>;
 }) {
   const { id } = await params;
+  const isPrint = (await searchParams).print === "1";
   const user = await getCurrentUser();
   if (!user || !hasPermission(user, "products.view")) {
     redirect("/");
@@ -37,6 +40,12 @@ export default async function ProductLabelPage({
   }
 
   return (
-    <BarcodeLabel name={product.name} price={product.selling_price} barcode={product.barcode} />
+    <BarcodeLabel
+      productId={id}
+      name={product.name}
+      price={product.selling_price}
+      barcode={product.barcode}
+      print={isPrint}
+    />
   );
 }

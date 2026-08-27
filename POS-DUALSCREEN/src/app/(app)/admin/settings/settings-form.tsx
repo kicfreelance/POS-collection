@@ -40,6 +40,17 @@ import {
 } from "./actions";
 import type { BusinessSettings } from "@/lib/settings-server";
 import type { PrinterInfo } from "@/types/electron";
+import { Switch } from "@/components/ui/switch";
+import { cn } from "@/lib/utils";
+import { Receipt } from "@/lib/receipt/receipt";
+import { SAMPLE_RECEIPT } from "@/lib/receipt/sample";
+import {
+  RECEIPT_TEMPLATES,
+  type ReceiptFontSize,
+  type ReceiptPaperWidth,
+  type ReceiptStyle,
+  type ReceiptTemplate,
+} from "@/lib/receipt/types";
 
 const NO_PRINTER = "__none__";
 
@@ -63,6 +74,15 @@ export function SettingsForm({ settings }: { settings: BusinessSettings }) {
   const [businessType, setBusinessType] = useState(settings.businessType);
   const [receiptPrinterName, setReceiptPrinterName] = useState(settings.receiptPrinterName ?? NO_PRINTER);
   const [kotPrinterName, setKotPrinterName] = useState(settings.kotPrinterName ?? NO_PRINTER);
+  const [labelPrinterName, setLabelPrinterName] = useState(settings.labelPrinterName ?? NO_PRINTER);
+  const [receiptTemplate, setReceiptTemplate] = useState<ReceiptTemplate>(settings.receiptTemplate);
+  const [receiptPaperWidth, setReceiptPaperWidth] = useState<ReceiptPaperWidth>(settings.receiptPaperWidth);
+  const [receiptFontSize, setReceiptFontSize] = useState<ReceiptFontSize>(settings.receiptFontSize);
+  const [receiptShowLogo, setReceiptShowLogo] = useState(settings.receiptShowLogo);
+  const [receiptShowTaxId, setReceiptShowTaxId] = useState(settings.receiptShowTaxId);
+  const [receiptShowCashier, setReceiptShowCashier] = useState(settings.receiptShowCashier);
+  const [receiptShowBarcode, setReceiptShowBarcode] = useState(settings.receiptShowBarcode);
+  const [receiptAutoPrint, setReceiptAutoPrint] = useState(settings.receiptAutoPrint);
 
   const [printers, setPrinters] = useState<PrinterInfo[]>([]);
   const [printersLoaded, setPrintersLoaded] = useState(false);
@@ -82,13 +102,14 @@ export function SettingsForm({ settings }: { settings: BusinessSettings }) {
   const [productSearch, setProductSearch] = useState("");
 
   useEffect(() => {
-    if (businessType !== "restaurant") return;
+    // Printer list is needed in retail (receipt + label printers) and restaurant.
     if (!printersLoaded && typeof window !== "undefined" && window.pos?.isElectron) {
       window.pos.printerAPI
         .listPrinters()
         .then(setPrinters)
         .finally(() => setPrintersLoaded(true));
     }
+    if (businessType !== "restaurant") return;
     if (!tablesLoaded) {
       listRestaurantTables()
         .then(setTables)
@@ -219,6 +240,15 @@ export function SettingsForm({ settings }: { settings: BusinessSettings }) {
       businessType,
       receiptPrinterName: receiptPrinterName === NO_PRINTER ? null : receiptPrinterName,
       kotPrinterName: kotPrinterName === NO_PRINTER ? null : kotPrinterName,
+      labelPrinterName: labelPrinterName === NO_PRINTER ? null : labelPrinterName,
+      receiptTemplate,
+      receiptPaperWidth,
+      receiptFontSize,
+      receiptShowLogo,
+      receiptShowTaxId,
+      receiptShowCashier,
+      receiptShowBarcode,
+      receiptAutoPrint,
     };
     startTransition(async () => {
       try {
@@ -230,6 +260,49 @@ export function SettingsForm({ settings }: { settings: BusinessSettings }) {
       }
     });
   }
+
+  const liveReceiptStyle: ReceiptStyle = {
+    template: receiptTemplate,
+    paperWidth: receiptPaperWidth,
+    fontSize: receiptFontSize,
+    showLogo: receiptShowLogo,
+    showTaxId: receiptShowTaxId,
+    showCashier: receiptShowCashier,
+    showBarcode: receiptShowBarcode,
+  };
+
+  const previewReceiptData = {
+    ...SAMPLE_RECEIPT,
+    business: {
+      ...SAMPLE_RECEIPT.business,
+      name: businessName || SAMPLE_RECEIPT.business.name,
+      address: address || SAMPLE_RECEIPT.business.address,
+      taxId: taxId || SAMPLE_RECEIPT.business.taxId,
+      phone: contactPhone || SAMPLE_RECEIPT.business.phone,
+      email: contactEmail || SAMPLE_RECEIPT.business.email,
+      logoUrl: settings.logoUrl,
+      header: receiptHeader || SAMPLE_RECEIPT.business.header,
+      footer: receiptFooter || SAMPLE_RECEIPT.business.footer,
+      currencySymbol: currencySymbol || SAMPLE_RECEIPT.business.currencySymbol,
+    },
+  };
+
+  const printerOptions = (
+    <>
+      <SelectItem value={NO_PRINTER}>Not assigned</SelectItem>
+      {printers.map((p) => (
+        <SelectItem key={p.name} value={p.name}>
+          {p.displayName || p.name}
+        </SelectItem>
+      ))}
+    </>
+  );
+
+  const printerHint = !printersLoaded
+    ? "Loading printers…"
+    : printers.length === 0
+      ? "No printers found (run the packaged app to see installed printers)."
+      : `${printers.length} printer(s) available.`;
 
   return (
     <form onSubmit={handleSubmit} className="grid gap-6">
@@ -295,18 +368,155 @@ export function SettingsForm({ settings }: { settings: BusinessSettings }) {
         </TabsContent>
 
         <TabsContent value="receipt">
-          <Card>
-            <CardContent className="grid gap-4 pt-6">
-              <div className="grid gap-1.5">
-                <Label htmlFor="receiptHeader">Receipt header text</Label>
-                <Textarea id="receiptHeader" value={receiptHeader} onChange={(e) => setReceiptHeader(e.target.value)} rows={2} />
-              </div>
-              <div className="grid gap-1.5">
-                <Label htmlFor="receiptFooter">Receipt footer text</Label>
-                <Textarea id="receiptFooter" value={receiptFooter} onChange={(e) => setReceiptFooter(e.target.value)} rows={2} />
-              </div>
-            </CardContent>
-          </Card>
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto]">
+            <div className="grid gap-4">
+              <Card>
+                <CardContent className="grid gap-4 pt-6">
+                  <Label>Template</Label>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {RECEIPT_TEMPLATES.map((t) => (
+                      <button
+                        key={t.value}
+                        type="button"
+                        onClick={() => setReceiptTemplate(t.value)}
+                        className={cn(
+                          "rounded-lg border p-3 text-left transition",
+                          receiptTemplate === t.value
+                            ? "border-primary bg-primary/5 ring-2 ring-primary/40"
+                            : "border-border hover:border-foreground/30",
+                        )}
+                      >
+                        <p className="text-sm font-semibold">{t.label}</p>
+                        <p className="text-xs text-muted-foreground">{t.blurb}</p>
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="grid gap-1.5">
+                      <Label>Paper width</Label>
+                      <Select
+                        value={receiptPaperWidth}
+                        onValueChange={(v) => v && setReceiptPaperWidth(v as ReceiptPaperWidth)}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="80mm">80 mm (common)</SelectItem>
+                          <SelectItem value="58mm">58 mm</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label>Font size</Label>
+                      <Select
+                        value={receiptFontSize}
+                        onValueChange={(v) => v && setReceiptFontSize(v as ReceiptFontSize)}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="small">Small</SelectItem>
+                          <SelectItem value="medium">Medium</SelectItem>
+                          <SelectItem value="large">Large</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3">
+                    <label className="flex items-center justify-between gap-2 text-sm">
+                      Show logo
+                      <Switch checked={receiptShowLogo} onCheckedChange={setReceiptShowLogo} />
+                    </label>
+                    <label className="flex items-center justify-between gap-2 text-sm">
+                      Show tax ID
+                      <Switch checked={receiptShowTaxId} onCheckedChange={setReceiptShowTaxId} />
+                    </label>
+                    <label className="flex items-center justify-between gap-2 text-sm">
+                      Show cashier name
+                      <Switch checked={receiptShowCashier} onCheckedChange={setReceiptShowCashier} />
+                    </label>
+                    <label className="flex items-center justify-between gap-2 text-sm">
+                      Show sale barcode (Detailed / Minimal)
+                      <Switch checked={receiptShowBarcode} onCheckedChange={setReceiptShowBarcode} />
+                    </label>
+                    <label className="flex items-center justify-between gap-2 text-sm">
+                      Auto-print receipt after each sale
+                      <Switch checked={receiptAutoPrint} onCheckedChange={setReceiptAutoPrint} />
+                    </label>
+                  </div>
+
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="receiptHeader">Header text</Label>
+                    <Textarea
+                      id="receiptHeader"
+                      value={receiptHeader}
+                      onChange={(e) => setReceiptHeader(e.target.value)}
+                      rows={2}
+                    />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="receiptFooter">Footer text</Label>
+                    <Textarea
+                      id="receiptFooter"
+                      value={receiptFooter}
+                      onChange={(e) => setReceiptFooter(e.target.value)}
+                      rows={2}
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="grid gap-4 pt-6 sm:grid-cols-2">
+                  <div className="grid gap-1.5">
+                    <Label>Receipt printer</Label>
+                    <Select
+                      value={receiptPrinterName}
+                      onValueChange={(v) => v && setReceiptPrinterName(v)}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>{printerOptions}</SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label>Barcode / label printer</Label>
+                    <Select
+                      value={labelPrinterName}
+                      onValueChange={(v) => v && setLabelPrinterName(v)}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>{printerOptions}</SelectContent>
+                    </Select>
+                  </div>
+                  <p className="text-xs text-muted-foreground sm:col-span-2">
+                    {printerHint} You can also pick a different printer for a single job at
+                    print time.
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card className="lg:sticky lg:top-4 lg:self-start">
+              <CardContent className="pt-6">
+                <p className="mb-2 text-xs font-medium text-muted-foreground">
+                  Live preview — {receiptPaperWidth}
+                </p>
+                <div className="flex justify-center overflow-auto rounded-lg bg-muted/40 p-4">
+                  <div className="shadow-lg">
+                    <Receipt data={previewReceiptData} style={liveReceiptStyle} />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
 
         <TabsContent value="costing">

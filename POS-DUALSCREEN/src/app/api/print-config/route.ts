@@ -12,6 +12,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ printerName: rows[0]?.receipt_printer_name ?? null });
   }
 
+  if (type === "label") {
+    const { rows } = await pool.query<{ label_printer_name: string | null }>(
+      `SELECT label_printer_name FROM business_settings WHERE id = true`,
+    );
+    return NextResponse.json({ printerName: rows[0]?.label_printer_name ?? null });
+  }
+
   if (type === "kot") {
     if (stationId) {
       const { rows } = await pool.query<{ printer_name: string | null }>(

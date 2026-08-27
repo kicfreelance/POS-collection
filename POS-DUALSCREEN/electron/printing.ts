@@ -26,7 +26,14 @@ async function getPrinterName(baseUrl: string, params: string): Promise<string |
 function silentPrint(win: BrowserWindow, deviceName: string | null): Promise<{ success: boolean; error?: string }> {
   return new Promise((resolve) => {
     win.webContents.print(
-      { silent: true, printBackground: true, deviceName: deviceName ?? undefined },
+      {
+        silent: true,
+        printBackground: true,
+        deviceName: deviceName ?? undefined,
+        // Thermal printers report their own roll width; let the driver + the
+        // page's own `@page { size: <width> auto }` CSS govern. Just drop margins.
+        margins: { marginType: "none" },
+      },
       (success, failureReason) => {
         resolve({ success, error: success ? undefined : failureReason });
       },
@@ -34,16 +41,20 @@ function silentPrint(win: BrowserWindow, deviceName: string | null): Promise<{ s
   });
 }
 
-async function printInternalPage(baseUrl: string, path: string, deviceName: string | null): Promise<{ success: boolean; error?: string }> {
+async function printInternalPage(
+  baseUrl: string,
+  path: string,
+  deviceName: string | null,
+): Promise<{ success: boolean; error?: string }> {
   if (!deviceName) {
-    return { success: false, error: "No printer assigned in Settings" };
+    return { success: false, error: "No printer selected. Pick one, or set a default in Settings." };
   }
 
   const win = new BrowserWindow({ show: false, webPreferences: { offscreen: false } });
   try {
     await win.loadURL(`${baseUrl}${path}`);
     // Let the page finish laying out its content before handing it to the print pipeline.
-    await new Promise((r) => setTimeout(r, 300));
+    await new Promise((r) => setTimeout(r, 350));
     return await silentPrint(win, deviceName);
   } finally {
     win.destroy();
@@ -58,10 +69,16 @@ export function registerPrintingHandlers(getAppUrl: () => string): void {
     return printers.map((p) => ({ name: p.name, displayName: p.displayName }));
   });
 
-  ipcMain.handle("print:receipt", async (_event, saleId: string) => {
+  ipcMain.handle("print:receipt", async (_event, saleId: string, deviceName?: string | null) => {
     const baseUrl = getAppUrl();
-    const receiptPrinterName = await getPrinterName(baseUrl, "type=receipt");
-    return printInternalPage(baseUrl, `/checkout/receipt/${saleId}`, receiptPrinterName);
+    const printer = deviceName || (await getPrinterName(baseUrl, "type=receipt"));
+    return printInternalPage(baseUrl, `/checkout/receipt/${saleId}?print=1`, printer);
+  });
+
+  ipcMain.handle("print:label", async (_event, productId: string, deviceName?: string | null) => {
+    const baseUrl = getAppUrl();
+    const printer = deviceName || (await getPrinterName(baseUrl, "type=label"));
+    return printInternalPage(baseUrl, `/products/${productId}/label?print=1`, printer);
   });
 
   ipcMain.handle("print:kot", async (_event, orderId: string, stationId: string | null) => {
