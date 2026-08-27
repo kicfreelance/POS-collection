@@ -380,11 +380,20 @@ export async function activateAndCache(
   return evaluate(loadCache(file, ctx.fingerprint), ctx.fingerprint, { product: ent.product });
 }
 
+export interface HeartbeatResult extends Evaluation {
+  /** true => the request reached the server (2xx or an understood error). */
+  contacted: boolean;
+}
+
 /**
- * Periodic revalidation. Refreshes the cached token, advances `seenTime`, and
- * returns the new state. A hard rejection (revoked / expired / suspended)
- * clears the cache so the next launch is blocked. Network errors are swallowed
- * — the app keeps running on the cached token until it ages past grace.
+ * Periodic revalidation / opportunistic check-in. Refreshes the cached token,
+ * advances `seenTime`, and returns the new state plus whether the server was
+ * actually reached (so the caller can retry sooner when offline).
+ *
+ * A hard rejection (revoked / expired / blocked / not_activated) clears the
+ * cache so the next launch is blocked — this is also how a machine that was
+ * removed server-side self-disables the moment it next gets internet.
+ * A plain network error is swallowed; the app keeps running on the cached token.
  */
 export async function heartbeatAndCache(
   file: string,
@@ -392,10 +401,11 @@ export async function heartbeatAndCache(
     activeTerminals?: number;
     terminals?: Array<{ machineId: string; hostname?: string; lastSeen?: number }>;
   },
-): Promise<Evaluation> {
+): Promise<HeartbeatResult> {
   const cache = loadCache(file, ctx.fingerprint);
-  if (!cache) return { state: "invalid", entitlement: null, reason: "no_license" };
+  if (!cache) return { state: "invalid", entitlement: null, reason: "no_license", contacted: false };
 
+  let contacted = false;
   try {
     const res = await post("/api/v1/heartbeat", {
       key: cache.key,
@@ -405,6 +415,7 @@ export async function heartbeatAndCache(
       activeTerminals: ctx.activeTerminals,
       terminals: ctx.terminals,
     });
+    contacted = true;
     const ent = verifyToken(res.token);
     if (ent && ent.fingerprint === ctx.fingerprint) {
       saveCache(file, ctx.fingerprint, {
@@ -415,20 +426,24 @@ export async function heartbeatAndCache(
       });
     }
   } catch (e) {
-    if (e instanceof LicenseError && HARD_REJECTIONS.has(e.code)) {
-      clearCache(file);
-      return { state: "invalid", entitlement: null, reason: e.code };
+    if (e instanceof LicenseError && e.code !== "network_error") {
+      contacted = true;
+      if (HARD_REJECTIONS.has(e.code)) {
+        clearCache(file);
+        return { state: "invalid", entitlement: null, reason: e.code, contacted: true };
+      }
+    } else {
+      // Network error: keep the token, but still advance seenTime so the clock
+      // can't be wound back between heartbeats.
+      saveCache(file, ctx.fingerprint, {
+        token: cache.token,
+        key: cache.key,
+        expiresAt: cache.expiresAt,
+        seenTime: bumpSeenTime(cache),
+      });
     }
-    // Network error: keep the token, but still advance seenTime so the clock
-    // can't be wound back between heartbeats.
-    saveCache(file, ctx.fingerprint, {
-      token: cache.token,
-      key: cache.key,
-      expiresAt: cache.expiresAt,
-      seenTime: bumpSeenTime(cache),
-    });
   }
-  return evaluate(loadCache(file, ctx.fingerprint), ctx.fingerprint);
+  return { ...evaluate(loadCache(file, ctx.fingerprint), ctx.fingerprint), contacted };
 }
 
 /**

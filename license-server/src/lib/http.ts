@@ -1,6 +1,7 @@
+import { eq } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { db } from "@/db";
-import { events } from "@/db/schema";
+import { events, licenses } from "@/db/schema";
 import { env } from "./env";
 import { timingSafeEqualStr } from "./crypto";
 
@@ -38,5 +39,17 @@ export async function logEvent(e: {
     });
   } catch {
     // best-effort audit logging; never fail the request over it
+  }
+}
+
+/** Raise the suspected-abuse flag on a license (idempotent-ish; refreshes note + time). */
+export async function flagSuspectedAbuse(licenseId: string, note: string) {
+  try {
+    await db
+      .update(licenses)
+      .set({ suspectedAbuse: true, suspectedAbuseAt: new Date(), suspectedAbuseNote: note })
+      .where(eq(licenses.id, licenseId));
+  } catch {
+    // best effort
   }
 }

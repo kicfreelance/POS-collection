@@ -1,7 +1,8 @@
-import { and, desc, eq } from "drizzle-orm";
+import { desc, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { activations, events, licenses } from "@/db/schema";
 import {
+  clearSuspectedAbuse,
   createLicense,
   deleteMachine,
   grantActivation,
@@ -38,9 +39,27 @@ export default async function AdminPage() {
     rejectsByLicense.set(r.licenseId, list);
   }
 
+  const flaggedCount = rows.filter((l) => l.suspectedAbuse).length;
+
   return (
     <main style={{ maxWidth: 1000, margin: "2rem auto", padding: "0 1rem" }}>
       <h1>License Server</h1>
+
+      {flaggedCount > 0 && (
+        <p
+          style={{
+            background: "#fdecec",
+            color: "#a1180f",
+            border: "1px solid #f3b4ae",
+            borderRadius: 8,
+            padding: "10px 14px",
+            fontWeight: 600,
+          }}
+        >
+          ⚠ {flaggedCount} licence(s) flagged for suspected abuse — a removed or blocked
+          machine has contacted the server, or a key is being hammered. See the red cards below.
+        </p>
+      )}
 
       {dbError && (
         <p style={{ color: "#b00" }}>
@@ -104,12 +123,12 @@ export default async function AdminPage() {
           <section
             key={l.id}
             style={{
-              border: "1px solid #ddd",
+              border: l.suspectedAbuse ? "2px solid #b00" : "1px solid #ddd",
               borderLeft: `4px solid ${l.status === "active" ? "#087443" : l.status === "revoked" ? "#b00" : "#a60"}`,
               borderRadius: 8,
               padding: 16,
               margin: "1rem 0",
-              background: "#fff",
+              background: l.suspectedAbuse ? "#fff7f7" : "#fff",
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
@@ -142,6 +161,29 @@ export default async function AdminPage() {
                 </form>
               </div>
             </div>
+
+            {l.suspectedAbuse && (
+              <div
+                style={{
+                  background: "#fdecec",
+                  border: "1px solid #f3b4ae",
+                  borderRadius: 6,
+                  padding: "8px 10px",
+                  margin: "10px 0 0",
+                  fontSize: 13,
+                }}
+              >
+                <strong style={{ color: "#a1180f" }}>⚠ Suspected abuse</strong>
+                {l.suspectedAbuseAt ? (
+                  <span style={{ color: "#666" }}> · {fmt(l.suspectedAbuseAt)}</span>
+                ) : null}
+                <div style={{ color: "#a1180f", marginTop: 2 }}>{l.suspectedAbuseNote}</div>
+                <form action={clearSuspectedAbuse} style={{ marginTop: 6 }}>
+                  <input type="hidden" name="id" value={l.id} />
+                  <button className="secondary">Clear flag</button>
+                </form>
+              </div>
+            )}
 
             {l.activationLocked && (
               <p style={{ color: "#b00", margin: "8px 0 0", fontSize: 13 }}>
@@ -215,13 +257,15 @@ export default async function AdminPage() {
             {licRejects.length > 0 && (
               <details style={{ marginTop: 10 }}>
                 <summary style={{ cursor: "pointer", color: "#a60" }}>
-                  ⚠ {licRejects.length} refused activation attempt(s) — possible abuse
+                  ⚠ {licRejects.length} refused activation / removed-machine check-in(s)
                 </summary>
                 <ul style={{ fontSize: 12, color: "#666", marginTop: 6 }}>
                   {licRejects.map((r) => (
                     <li key={r.id}>
-                      {fmt(r.createdAt)} · {String((r.detail as Record<string, unknown>)?.reason ?? "?")} ·
-                      fp {r.fingerprint?.slice(0, 10)}… · ip {r.ip}
+                      {fmt(r.createdAt)} ·{" "}
+                      {r.type === "zombie_heartbeat" ? "removed machine checked in" : "activation refused"} ·{" "}
+                      {String((r.detail as Record<string, unknown>)?.reason ?? "?")} · fp{" "}
+                      {r.fingerprint?.slice(0, 10)}… · ip {r.ip}
                     </li>
                   ))}
                 </ul>
@@ -243,8 +287,8 @@ function loadLicenses() {
 
 function loadRejects() {
   return db.query.events.findMany({
-    where: and(eq(events.type, "reject")),
+    where: inArray(events.type, ["reject", "zombie_heartbeat"]),
     orderBy: [desc(events.createdAt)],
-    limit: 100,
+    limit: 200,
   });
 }

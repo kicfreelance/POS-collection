@@ -1,9 +1,9 @@
-import { and, count, eq } from "drizzle-orm";
+import { and, count, eq, gte, sql } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { db } from "@/db";
-import { activations, licenses } from "@/db/schema";
+import { activations, events, licenses } from "@/db/schema";
 import { buildToken } from "@/lib/entitlement";
-import { clientIp, json, logEvent } from "@/lib/http";
+import { clientIp, flagSuspectedAbuse, json, logEvent } from "@/lib/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -104,6 +104,10 @@ export async function POST(req: NextRequest) {
     // Brand-new machine — must fit within the lifetime activation budget.
     if (license.activationLocked) {
       await logEvent({ licenseId: license.id, type: "reject", fingerprint, ip, detail: { reason: "activation_locked" } });
+      await flagSuspectedAbuse(
+        license.id,
+        `New machine ${fingerprint.slice(0, 10)}… tried to activate a LOCKED key from ${ip} at ${new Date().toISOString()}.`,
+      );
       return json({ error: "activation_locked" }, 403);
     }
 
@@ -124,6 +128,28 @@ export async function POST(req: NextRequest) {
         ip,
         detail: { reason: "activation_limit_reached", used, max: license.maxActivations },
       });
+
+      // Repeated over-limit attempts (>=3 in 7 days) look like someone trying
+      // key after key of machines rather than a one-off "I got a new PC".
+      const since = new Date(Date.now() - 7 * 86_400_000);
+      const [{ n }] = await db
+        .select({ n: count() })
+        .from(events)
+        .where(
+          and(
+            eq(events.licenseId, license.id),
+            eq(events.type, "reject"),
+            gte(events.createdAt, since),
+            sql`${events.detail}->>'reason' = 'activation_limit_reached'`,
+          ),
+        );
+      if (n >= 3) {
+        await flagSuspectedAbuse(
+          license.id,
+          `${n} over-limit activation attempts in 7 days (latest ${fingerprint.slice(0, 10)}… from ${ip}).`,
+        );
+      }
+
       return json(
         {
           error: "activation_limit_reached",

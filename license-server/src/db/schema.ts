@@ -61,6 +61,15 @@ export const licenses = pgTable("licenses", {
   activationLocked: boolean("activation_locked").notNull().default(false),
 
   activationCount: integer("activation_count").notNull().default(0),
+
+  // Raised when the server sees something that looks like abuse while the
+  // customer's machine is briefly online: a removed/blocked machine phoning
+  // home ("dead PC" is still alive), an activation-locked key being hit, or
+  // repeated over-limit activation attempts. Cleared by a vendor in /admin.
+  suspectedAbuse: boolean("suspected_abuse").notNull().default(false),
+  suspectedAbuseAt: timestamp("suspected_abuse_at", { withTimezone: true }),
+  suspectedAbuseNote: text("suspected_abuse_note"),
+
   // DEPRECATED — unused by current logic, retained for old rows.
   maxTransfers: integer("max_transfers").notNull().default(3),
   transfersUsed: integer("transfers_used").notNull().default(0),

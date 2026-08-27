@@ -1,6 +1,6 @@
 import path from "node:path";
 import os from "node:os";
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, net } from "electron";
 import {
   activateAndCache,
   clearCache,
@@ -179,18 +179,31 @@ export async function ensureLicensed(): Promise<void> {
 }
 
 /**
- * Periodic online revalidation for the Server. `getActiveTerminals` lets the
- * Server report live seat usage upstream. On a hard rejection it quits, which
- * also takes down every Terminal (they render this Server's app).
+ * Opportunistic online revalidation for the Server. `getActiveTerminals` lets it
+ * report live seat usage upstream. Backs off fast when offline and fires an
+ * immediate check-in when connectivity returns, so a briefly-online Server is
+ * seen within minutes. On a hard rejection it quits, which also takes down every
+ * Terminal (they render this Server's app).
  */
 export function startHeartbeat(
   getActiveTerminals?: () => Array<{ machineId: string; hostname?: string; lastSeen?: number }>,
 ): void {
+  let failures = 0;
+  let wasOnline = true;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let running = false;
+
+  const schedule = (ms: number) => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => void tick(), ms);
+  };
+
   const tick = async () => {
-    const terminals = getActiveTerminals?.() ?? [];
-    let ev: Evaluation;
+    if (running) return;
+    running = true;
     try {
-      ev = await heartbeatAndCache(cacheFile(), {
+      const terminals = getActiveTerminals?.() ?? [];
+      const res = await heartbeatAndCache(cacheFile(), {
         fingerprint: fingerprint(),
         role: ROLE,
         hostname: os.hostname(),
@@ -198,23 +211,43 @@ export function startHeartbeat(
         activeTerminals: terminals.length,
         terminals,
       });
-    } catch {
-      return;
-    }
-    if (ev.state === "invalid") {
-      await dialog.showMessageBox({
-        type: "error",
-        buttons: ["Quit"],
-        noLink: true,
-        message: "POS Dual Screen licence is no longer valid",
-        detail:
-          `Reason: ${ev.reason ?? "unknown"}.\n\n` +
-          "The Server and all Terminals will stop until this is re-activated.",
-      });
-      app.exit(0);
+
+      if (res.state === "invalid") {
+        await dialog.showMessageBox({
+          type: "error",
+          buttons: ["Quit"],
+          noLink: true,
+          message: "POS Dual Screen licence is no longer valid",
+          detail:
+            `Reason: ${res.reason ?? "unknown"}.\n\n` +
+            "The Server and all Terminals will stop until this is re-activated.",
+        });
+        app.exit(0);
+        return;
+      }
+
+      if (res.contacted) {
+        failures = 0;
+        schedule(HEARTBEAT_MS);
+      } else {
+        failures += 1;
+        schedule(Math.min(2 * 60_000 * 2 ** (failures - 1), 60 * 60_000));
+      }
+    } finally {
+      running = false;
     }
   };
 
-  setTimeout(() => void tick(), 60_000);
-  setInterval(() => void tick(), HEARTBEAT_MS);
+  schedule(30_000);
+
+  setInterval(() => {
+    let online = true;
+    try {
+      online = net.isOnline();
+    } catch {
+      /* assume online */
+    }
+    if (online && !wasOnline) void tick();
+    wasOnline = online;
+  }, 3 * 60_000);
 }

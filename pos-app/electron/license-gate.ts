@@ -1,6 +1,6 @@
 import path from "node:path";
 import os from "node:os";
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, net } from "electron";
 import {
   activateAndCache,
   clearCache,
@@ -177,37 +177,75 @@ export async function ensureLicensed(): Promise<void> {
 }
 
 /**
- * Periodic online revalidation. Call once after the app window is up. On a hard
- * rejection (revoked / expired / suspended) it shows a blocking notice and quits;
- * transient network failures are ignored until the cached token ages past grace.
+ * Opportunistic online revalidation. Call once after the app window is up.
+ *
+ * - Steady state: check in every 12 h.
+ * - When a check-in can't reach the server: retry with backoff (2, 4, 8… up to
+ *   60 min) so a machine that boots offline and gets internet later is seen
+ *   within minutes, not 12 h.
+ * - Also polls connectivity every 3 min and fires an immediate check-in the
+ *   moment the machine comes back online.
+ * - On a hard rejection (revoked / blocked / removed server-side) it shows a
+ *   blocking notice and quits.
  */
 export function startHeartbeat(): void {
+  let failures = 0;
+  let wasOnline = true;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let running = false;
+
+  const schedule = (ms: number) => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => void tick(), ms);
+  };
+
   const tick = async () => {
-    let ev: Evaluation;
+    if (running) return;
+    running = true;
     try {
-      ev = await heartbeatAndCache(cacheFile(), {
+      const res = await heartbeatAndCache(cacheFile(), {
         fingerprint: fingerprint(),
         role: ROLE,
         hostname: os.hostname(),
         appVersion: app.getVersion(),
       });
-    } catch {
-      return;
-    }
-    if (ev.state === "invalid") {
-      await dialog.showMessageBox({
-        type: "error",
-        buttons: ["Quit"],
-        noLink: true,
-        message: "POS licence is no longer valid",
-        detail:
-          `Reason: ${ev.reason ?? "unknown"}.\n\n` +
-          "The app will now close. Contact your vendor or re-activate on next launch.",
-      });
-      app.exit(0);
+
+      if (res.state === "invalid") {
+        await dialog.showMessageBox({
+          type: "error",
+          buttons: ["Quit"],
+          noLink: true,
+          message: "POS licence is no longer valid",
+          detail:
+            `Reason: ${res.reason ?? "unknown"}.\n\n` +
+            "The app will now close. Contact your vendor or re-activate on next launch.",
+        });
+        app.exit(0);
+        return;
+      }
+
+      if (res.contacted) {
+        failures = 0;
+        schedule(HEARTBEAT_MS);
+      } else {
+        failures += 1;
+        schedule(Math.min(2 * 60_000 * 2 ** (failures - 1), 60 * 60_000));
+      }
+    } finally {
+      running = false;
     }
   };
 
-  setTimeout(() => void tick(), 60_000);
-  setInterval(() => void tick(), HEARTBEAT_MS);
+  schedule(30_000); // first check-in shortly after launch
+
+  setInterval(() => {
+    let online = true;
+    try {
+      online = net.isOnline();
+    } catch {
+      /* assume online if the API is unavailable */
+    }
+    if (online && !wasOnline) void tick();
+    wasOnline = online;
+  }, 3 * 60_000);
 }

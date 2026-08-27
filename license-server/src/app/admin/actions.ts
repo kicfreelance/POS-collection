@@ -53,6 +53,15 @@ export async function grantActivation(formData: FormData) {
   revalidatePath("/admin");
 }
 
+export async function clearSuspectedAbuse(formData: FormData) {
+  const id = String(formData.get("id"));
+  await db
+    .update(licenses)
+    .set({ suspectedAbuse: false, suspectedAbuseNote: null, updatedAt: new Date() })
+    .where(eq(licenses.id, id));
+  revalidatePath("/admin");
+}
+
 export async function toggleActivationLock(formData: FormData) {
   const id = String(formData.get("id"));
   const lic = await db.query.licenses.findFirst({ where: eq(licenses.id, id) });

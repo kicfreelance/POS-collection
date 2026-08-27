@@ -3,7 +3,11 @@ import type { NextRequest } from "next/server";
 import { db } from "@/db";
 import { activations, licenses, terminalRegistrations } from "@/db/schema";
 import { buildToken } from "@/lib/entitlement";
-import { clientIp, json, logEvent } from "@/lib/http";
+import { clientIp, flagSuspectedAbuse, json, logEvent } from "@/lib/http";
+
+function short(fp: string) {
+  return fp.slice(0, 10);
+}
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,12 +39,33 @@ export async function POST(req: NextRequest) {
   const ip = clientIp(req);
 
   const license = await db.query.licenses.findFirst({ where: eq(licenses.key, key) });
-  if (!license) return json({ error: "invalid_key", valid: false }, 404);
+  if (!license) {
+    await logEvent({ type: "heartbeat", fingerprint, ip, detail: { valid: false, reason: "invalid_key" } });
+    return json({ error: "invalid_key", valid: false }, 404);
+  }
 
   const activation = await db.query.activations.findFirst({
     where: and(eq(activations.licenseId, license.id), eq(activations.fingerprint, fingerprint)),
   });
-  if (!activation) return json({ error: "not_activated", valid: false }, 404);
+
+  // A check-in for a machine the server has no record of = a machine that was
+  // removed by a vendor ("that PC is dead") is in fact still running and just
+  // touched the internet. Flag it loudly. The client treats not_activated as a
+  // hard rejection, so this zombie also self-disables on its next restart.
+  if (!activation) {
+    await logEvent({
+      licenseId: license.id,
+      type: "zombie_heartbeat",
+      fingerprint,
+      ip,
+      detail: { reason: "not_activated" },
+    });
+    await flagSuspectedAbuse(
+      license.id,
+      `Removed machine ${short(fingerprint)}… checked in from ${ip} at ${new Date().toISOString()} — the "dead" PC is still in use.`,
+    );
+    return json({ error: "not_activated", valid: false }, 404);
+  }
 
   const invalidReason =
     license.status !== "active"
@@ -59,6 +84,14 @@ export async function POST(req: NextRequest) {
       ip,
       detail: { valid: false, reason: invalidReason },
     });
+    // A *blocked* machine phoning home is the same abuse signal; lifecycle
+    // states (suspended / expired) are not.
+    if (activation.blocked) {
+      await flagSuspectedAbuse(
+        license.id,
+        `Blocked machine ${short(fingerprint)}… checked in from ${ip} at ${new Date().toISOString()}.`,
+      );
+    }
     return json({ valid: false, error: invalidReason, token: null }, 403);
   }
 
